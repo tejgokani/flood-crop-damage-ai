@@ -38,7 +38,7 @@ def render_predictions(
     plt = _agg("agg")
     from ..data.etci import _stack_sar, load_planes
     from ..data.severity import severity_from_masks
-    from ..models.registry import DISPLAY_NAMES, build_model, is_temporal
+    from ..models.registry import DISPLAY_NAMES, build_model, is_temporal, wants_change_input
     from ..preprocess.transforms import build_transform
 
     idx_files = sorted(data_root.glob("index_*.json"))
@@ -64,6 +64,7 @@ def render_predictions(
     model.eval()
     tf = build_transform(train=False, use_clahe=True)
     temporal = is_temporal(model_name)
+    change = wants_change_input(model_name)
 
     rows = len(chosen)
     fig, axes = plt.subplots(rows, 4, figsize=(13, 3.05 * rows), squeeze=False)
@@ -71,10 +72,12 @@ def render_predictions(
     for r, rec in enumerate(chosen):
         p = load_planes(data_root, rec["tile_id"])
         post = tf(_stack_sar(p["post_vv"], p["post_vh"], size))
+        pre = tf(_stack_sar(p["pre_vv"], p["pre_vh"], size))
         x = torch.from_numpy(post).float()[None]
         if temporal:
-            pre = tf(_stack_sar(p["pre_vv"], p["pre_vh"], size))
             x = torch.stack([torch.from_numpy(pre).float(), x[0]], dim=0)[None]
+        elif change:
+            x = torch.from_numpy(np.concatenate([post, post - pre], axis=0)).float()[None]
         with torch.no_grad():
             seg, cls = model(x)
         prob = torch.sigmoid(seg)[0, 0].numpy()
@@ -130,7 +133,32 @@ def render_predictions(
 
 
 def render_best(reports: Path, data_root: Path, checkpoints: Path) -> Path | None:
-    """Render the panel for whichever model scored best on the test split."""
+    """Render the panel for whichever model scored best out-of-fold.
+
+    Prefers the cross-validated results and their fold checkpoints; falls back to the
+    single-split run when cross validation has not been run.
+    """
+    from .cv_report import load as load_cv
+
+    cv = load_cv(reports)
+    if cv and cv.get("models"):
+        ranked = sorted(cv["models"],
+                        key=lambda m: m.get("oof_metrics", {}).get("macro_f1", -1), reverse=True)
+        for m in ranked:
+            # Use the fold whose own macro-F1 was closest to the out-of-fold average, so the
+            # panel shows a typical model rather than the luckiest one.
+            folds = [f for f in m.get("folds", []) if f.get("ok")]
+            if not folds:
+                continue
+            target = m.get("oof_metrics", {}).get("macro_f1", 0.0)
+            best = min(folds, key=lambda f: abs(f["metrics"].get("macro_f1", 0.0) - target))
+            ck = checkpoints / f"{m['model']}_fold{best['fold']}.pt"
+            if ck.exists():
+                return render_predictions(
+                    ck, m["model"], data_root, reports / "figures" / "predictions.png",
+                    size=cv.get("image_size", 192),
+                )
+
     results_path = reports / "results.json"
     if not results_path.exists():
         return None
@@ -143,10 +171,7 @@ def render_best(reports: Path, data_root: Path, checkpoints: Path) -> Path | Non
         tier["models"], key=lambda m: (m.get("final_test") or {}).get("macro_f1", -1), reverse=True
     )
     for m in ranked:
-        suffix = "_corrected" if m.get("selected_run") == "corrected" else ""
-        ck = checkpoints / f"{m['name']}_{tier['tier']}{suffix}.pt"
-        if not ck.exists():
-            ck = checkpoints / f"{m['name']}_{tier['tier']}.pt"
+        ck = checkpoints / f"{m['name']}_{tier['tier']}.pt"
         if ck.exists():
             return render_predictions(
                 ck, m["name"], data_root, reports / "figures" / "predictions.png",
