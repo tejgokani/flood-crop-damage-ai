@@ -1,0 +1,56 @@
+%% Flow chart of the proposed work -- AI-Based Crop Flood Damage Assessment (PS-6)
+%% Follows the sequence prescribed in Sequence.docx for both modalities.
+flowchart TD
+    subgraph A["PIPELINE A — IMAGE (Sentinel-1 SAR, ETCI-2021)"]
+        A1["Load Image Dataset<br/><i>2,032 pre/post tile pairs</i>"]
+        A2["Data Preprocessing<br/><i>VV + VH + derived ratio, resize, normalise</i>"]
+        A3["Data Leakage Checks<br/><i>duplicate · near-duplicate pHash · split overlap</i>"]
+        A4["CLAHE<br/><i>clip 2.0, 8×8 — SAR channels only</i>"]
+        A5["Train / Val / Test Split<br/>+ 10-fold Cross Validation"]
+        A6["GAN Augmentation<br/><b>TRAINING data only</b><br/><i>conditional DCGAN</i>"]
+        A7["Initial Model Training<br/><i>5 hybrid architectures</i>"]
+        A8{"Overfitting /<br/>Underfitting<br/>Detection"}
+        A9["Apply Correction<br/>and Retrain"]
+        A10["Final Test Evaluation"]
+        A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7 --> A8
+        A8 -->|OVERFIT: ↑dropout ↑decay ↑augment| A9
+        A8 -->|UNDERFIT: ↓reg ↑LR ↑epochs| A9
+        A8 -->|OK| A10
+        A9 --> A10
+    end
+
+    subgraph B["PIPELINE B — TABULAR (ICRISAT Indian district crop statistics)"]
+        B1["Load CSV Dataset<br/><i>310 districts · 23 crops · 2010–2017</i>"]
+        B2["Data Preprocessing<br/><i>wide→long melt, yield anomaly z-score</i>"]
+        B3["Data Leakage Checks<br/><i>target · duplicate · suspicious features</i>"]
+        B4["Train / Val / Test Split<br/>grouped by district + 10-fold CV"]
+        B5["SMOTE<br/><b>TRAINING data only</b><br/><i>10.9:1 → 1:1</i>"]
+        B6["Initial Model Training"]
+        B7{"Overfitting /<br/>Underfitting<br/>Detection"}
+        B8["Apply Correction<br/>and Retrain"]
+        B9["Final Test Evaluation"]
+        B1 --> B2 --> B3 --> B4 --> B5 --> B6 --> B7
+        B7 -->|OVERFIT / UNDERFIT| B8
+        B7 -->|OK| B9
+        B8 --> B9
+    end
+
+    A10 --> F["FUSION LAYER<br/><i>image severity × district crop context</i>"]
+    B9 --> F
+    F --> OUT["OUTPUT<br/><b>Healthy → Mild → Moderate → Severe</b><br/>+ damage mask + district-level loss estimate"]
+
+    subgraph M["5 HYBRID ARCHITECTURES (shared decoder + head)"]
+        M1["YOLO12 + U-Net"]
+        M2["ResNet + U-Net"]
+        M3["EfficientNet + Attention"]
+        M4["Swin Transformer + U-Net"]
+        M5["CNN + LSTM <i>(pre/post temporal)</i>"]
+    end
+    A7 -.-> M
+
+    classDef only fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    classDef out fill:#bbf7d0,stroke:#15803d,stroke-width:2px,color:#111
+    classDef dec fill:#e0e7ff,stroke:#4338ca,stroke-width:2px,color:#111
+    class A6,B5 only
+    class OUT,F out
+    class A8,B7 dec

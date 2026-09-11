@@ -36,6 +36,11 @@ class ConvLSTMCell(nn.Module):
         self.conv = nn.Conv2d(
             in_channels + hidden_channels, hidden_channels * 4, kernel, padding=kernel // 2
         )
+        # Standard LSTM practice: bias the forget gate open at initialisation. Left at zero
+        # the gate sits at sigmoid(0) = 0.5 and the cell state decays by half every step, so
+        # the pre-flood frame is already half-forgotten by the time the post frame arrives.
+        with torch.no_grad():
+            self.conv.bias[hidden_channels : 2 * hidden_channels].fill_(1.0)
 
     def forward(
         self, x: torch.Tensor, state: tuple[torch.Tensor, torch.Tensor] | None
@@ -93,7 +98,16 @@ class CNNLSTM(FloodModel):
         super().__init__()
         self.encoder = CNNEncoder(in_channels, widths)
         enc_ch = self.encoder.channels
-        self.lstm = ConvLSTMCell(enc_ch[-1], enc_ch[-1])
+        # One ConvLSTM per encoder scale, not only at the bottleneck.
+        #
+        # With recurrence at the deepest scale alone, the temporal signal exists in exactly
+        # one of the four feature maps handed to the decoder, and the three full-resolution
+        # skips -- identical between the two timesteps -- dilute it away: measured end to
+        # end, a 16% relative difference at the bottleneck arrived at the classifier as
+        # 1e-8, i.e. the network was a single-frame CNN wearing an LSTM. Running the
+        # recurrence at every scale means every skip carries pre-to-post change, so the
+        # temporal claim holds structurally rather than by hope.
+        self.lstms = nn.ModuleList([ConvLSTMCell(c, c) for c in enc_ch])
         self.decoder = UNetDecoder(enc_ch, list(decoder_channels)[: len(enc_ch) - 1])
         self.head = SegSeverityHead(self.decoder.out_channels, dropout=dropout)
 
@@ -101,19 +115,16 @@ class CNNLSTM(FloodModel):
         """``x`` is ``[B, T, C, H, W]``; a ``[B, C, H, W]`` input is treated as T=1."""
         if x.ndim == 4:
             x = x[:, None]
-        b, t = x.shape[:2]
-        state: tuple[torch.Tensor, torch.Tensor] | None = None
-        last_feats: list[torch.Tensor] = []
+        t = x.shape[1]
+        states: list[tuple[torch.Tensor, torch.Tensor] | None] = [None] * len(self.lstms)
 
         for step in range(t):
             feats = self.encoder(x[:, step])
-            h, c = self.lstm(feats[-1], state)
-            state = (h, c)
-            last_feats = feats
+            for i, (cell, f) in enumerate(zip(self.lstms, feats, strict=True)):
+                states[i] = cell(f, states[i])
 
-        # Skips come from the final (post-flood) timestep; the deepest feature is the
-        # recurrent state, which is what carries the pre-to-post change.
-        return [*last_feats[:-1], state[0]]
+        # Every level is now a recurrent state over the pre/post sequence.
+        return [s[0] for s in states]
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         import torch.nn.functional as F

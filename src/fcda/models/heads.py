@@ -25,11 +25,23 @@ class SegSeverityHead(nn.Module):
     def __init__(self, in_channels: int, n_classes: int = NUM_CLASSES, dropout: float = 0.1):
         super().__init__()
         self.seg = nn.Conv2d(in_channels, 1, kernel_size=1)
+        # The classifier reads three things rather than one:
+        #
+        #   * average-pooled features -- overall scene context;
+        #   * max-pooled features -- a small but intensely flooded region must survive. Most
+        #     of a damaged tile is still dry field, so global average pooling alone washes
+        #     out exactly the evidence that distinguishes Mild from Severe;
+        #   * the predicted flood fraction, mean(sigmoid(seg)).
+        #
+        # The third input is the important one. Our severity label is *defined* as the net
+        # inundated fraction of the tile (see data/severity.py), so handing the classifier
+        # that same quantity gives it a direct path to the target instead of asking it to
+        # rediscover an area computation from pooled features. It also couples the two heads:
+        # the classifier improves when the segmentation improves, which is the behaviour we
+        # want from a dual-head model.
         self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
             nn.Dropout(dropout),
-            nn.Linear(in_channels, 128),
+            nn.Linear(in_channels * 2 + 1, 128),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout),
             nn.Linear(128, n_classes),
@@ -42,7 +54,16 @@ class SegSeverityHead(nn.Module):
                 m.p = p
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.seg(x), self.classifier(x)
+        seg = self.seg(x)
+        pooled = torch.cat(
+            [
+                x.mean(dim=(2, 3)),
+                x.amax(dim=(2, 3)),
+                torch.sigmoid(seg).mean(dim=(2, 3)),  # predicted net flood fraction
+            ],
+            dim=1,
+        )
+        return seg, self.classifier(pooled)
 
 
 class FloodModel(nn.Module):
