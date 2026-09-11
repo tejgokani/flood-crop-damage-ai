@@ -164,6 +164,97 @@ def plot_scaling(scaling: dict, out: Path) -> Path | None:
     return out
 
 
+def results_section(results: dict, scaling: dict | None, tabular: dict | None) -> str:
+    """The block injected between the RESULTS markers in the README."""
+    tiers = results.get("tiers", [])
+    if not tiers:
+        return "_No results yet._"
+    tier = tiers[-1]
+    lines: list[str] = []
+
+    reached = [t["tier"] for t in tiers]
+    lines.append(
+        f"Deepest tier completed: **{tier['tier']}** "
+        f"({tier['n_tiles']} tiles at {tier['image_size']}px, device `{tier['device']}`). "
+        f"Tiers walked: {' → '.join(reached)}."
+    )
+    if scaling and scaling.get("stopped_because"):
+        lines.append(f"\nScaling stopped because: _{scaling['stopped_because']}_")
+
+    lines.append("\n### Image pipeline — five hybrids, one protocol\n")
+    lines.append(comparison_table(results))
+    lines.append("\n**Per-class F1 (test)**\n")
+    lines.append(per_class_table(results))
+    lines.append(
+        f"\nTier class distribution: `{tier.get('class_distribution', {})}` "
+        "(tiers cap Healthy at 45%; the natural prior in the full pool is 86.9% Healthy / "
+        "0.98% Severe)."
+    )
+
+    gan = tier.get("gan") or {}
+    if gan:
+        lines.append(
+            f"\n**GAN augmentation** (training split only): {gan.get('n_generated', 0)} synthetic "
+            f"tiles from {gan.get('n_real_used', 0)} real ones over {gan.get('epochs', 0)} epochs "
+            f"in {gan.get('seconds', 0):.0f}s."
+        )
+
+    leak = tier.get("leakage") or {}
+    if leak:
+        lines.append(
+            f"\n**Leakage audit (image)**: {'clean' if leak.get('clean') else 'findings present'} — "
+            f"{leak.get('n_findings', 0)} finding(s)."
+        )
+
+    if tabular:
+        tm = tabular.get("test_metrics", {})
+        cv = tabular.get("cv", {})
+        sm = tabular.get("smote", {})
+        lines.append("\n### Tabular pipeline — Indian district crop statistics\n")
+        lines.append(
+            f"| Metric | Value |\n|---|---:|\n"
+            f"| Test macro-F1 | **{tm.get('macro_f1', 0):.3f}** |\n"
+            f"| Test accuracy | {tm.get('accuracy', 0):.3f} |\n"
+            f"| Cohen's κ | {tm.get('kappa', 0):.3f} |\n"
+            f"| 10-fold CV macro-F1 | {cv.get('mean_macro_f1', 0):.3f} ± {cv.get('std', 0):.3f} |\n"
+            f"| SMOTE | {sm.get('before', {})} → balanced (+{sm.get('n_synthetic', 0)} rows) |\n"
+            f"| Target leakage caught | `{', '.join(tabular.get('dropped_columns', []))}` |"
+        )
+
+    figs = []
+    for name, cap in (("learning_curves.png", "Learning curves"),
+                      ("confusion_matrices.png", "Confusion matrices"),
+                      ("scaling.png", "Progressive scaling")):
+        if (Path("reports/figures") / name).exists():
+            figs.append(f"**{cap}**\n\n![{cap}](reports/figures/{name})")
+    if figs:
+        lines.append("\n" + "\n\n".join(figs))
+
+    return "\n".join(lines)
+
+
+def inject_into_readme(reports: Path, readme: Path = Path("README.md")) -> None:
+    """Replace the RESULTS block in the README with freshly generated content."""
+    if not readme.exists():
+        return
+    results = json.loads((reports / "results.json").read_text())
+    scaling = None
+    if (reports / "scaling_log.json").exists():
+        scaling = json.loads((reports / "scaling_log.json").read_text())
+    tabular = None
+    if (reports / "tabular.json").exists():
+        tabular = json.loads((reports / "tabular.json").read_text())
+
+    body = results_section(results, scaling, tabular)
+    text = readme.read_text()
+    start, end = "<!-- RESULTS:START -->", "<!-- RESULTS:END -->"
+    if start in text and end in text:
+        head = text.split(start)[0]
+        tail = text.split(end)[1]
+        readme.write_text(f"{head}{start}\n{body}\n{end}{tail}")
+        print(f"README results section updated ({len(body)} chars)")
+
+
 def build_all(reports: Path) -> dict:
     """Regenerate every figure and table that the README and slides consume."""
     results_path = reports / "results.json"
@@ -186,6 +277,7 @@ def build_all(reports: Path) -> dict:
         if p:
             made.append(str(p))
 
+    inject_into_readme(reports)
     table = comparison_table(results)
     (reports / "comparison.md").write_text(
         "# Model comparison\n\n" + table + "\n\n## Per-class F1\n\n" + per_class_table(results) + "\n"
