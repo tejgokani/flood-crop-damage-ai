@@ -77,7 +77,7 @@ Scaling stopped because: _advancing to T3_medium: projected 29 min, 1.4 GB peak,
 
 | Hybrid | Healthy | Mild | Moderate | Severe |
 |---|---:|---:|---:|---:|
-| YOLO12 + U-Net | 0.553 | 0.417 | 0.400 | 0.000 |
+| YOLO12 + U-Net | 0.823 | 0.417 | 0.400 | 0.000 |
 | ResNet + U-Net | 0.820 | 0.560 | 0.621 | 0.000 |
 | EfficientNet + Attention | 0.815 | 0.571 | 0.640 | 0.000 |
 | Swin Transformer + U-Net | 0.783 | 0.588 | 0.375 | 0.000 |

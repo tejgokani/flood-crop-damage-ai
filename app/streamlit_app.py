@@ -59,13 +59,43 @@ def load_model(name: str, ckpt: Path):
 
 
 def find_checkpoints() -> dict[str, Path]:
+    """Best available checkpoint per architecture.
+
+    Ranked by the tier it was trained at, then preferring the corrected run. Plain
+    alphabetical order would pick `T1_tiny` over `T2_small` and silently demo the weakest
+    model in the directory.
+    """
+    from fcda.data.tiers import TIERS_BY_NAME, tier_index
+
     out: dict[str, Path] = {}
     ck = ROOT / "checkpoints"
-    if ck.exists():
-        for p in sorted(ck.glob("*.pt")):
-            for name in MODELS:
-                if p.name.startswith(name):
-                    out.setdefault(name, p)
+    if not ck.exists():
+        return out
+
+    # Which run the pipeline actually selected per (model, tier). The corrected run is kept
+    # only when it improved validation, which it usually does not -- so preferring
+    # "_corrected" blindly would demo a model the benchmark itself rejected.
+    selected: dict[tuple[str, str], str] = {}
+    res = ROOT / "reports" / "results.json"
+    if res.exists():
+        import json
+
+        for t in json.loads(res.read_text()).get("tiers", []):
+            for m in t.get("models", []):
+                selected[(m["name"], t["tier"])] = m.get("selected_run", "initial")
+
+    def rank(path: Path, model: str) -> tuple[int, int]:
+        stem = path.stem[len(model) + 1 :]           # e.g. "T2_small" or "T2_small_corrected"
+        corrected = stem.endswith("_corrected")
+        tier = stem.removesuffix("_corrected")
+        want = selected.get((model, tier), "initial")
+        preferred = int(corrected == (want == "corrected"))
+        return (tier_index(tier) if tier in TIERS_BY_NAME else -1, preferred)
+
+    for name in MODELS:
+        candidates = [p for p in ck.glob("*.pt") if p.stem.startswith(name + "_")]
+        if candidates:
+            out[name] = max(candidates, key=lambda p: rank(p, name))
     return out
 
 
@@ -92,6 +122,7 @@ with st.sidebar:
             "Trained model", list(ckpts), format_func=lambda n: DISPLAY_NAMES.get(n, n)
         )
         st.success(f"Checkpoint: `{ckpts[model_name].name}`")
+        st.caption("Best available checkpoint per architecture: highest tier, and the run the benchmark actually selected.")
     else:
         model_name = None
         st.info("No checkpoint found — running in rule-based mode. Train with `make train`.")
