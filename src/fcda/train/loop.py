@@ -37,13 +37,28 @@ def pick_device(prefer: str = "auto") -> str:
     return "cpu"
 
 
-def _sampler_kwargs(dataset, balanced: bool) -> dict:
-    """Class-balanced sampling for the training split.
+#: Exponent on inverse class frequency for the training sampler.
+#:
+#: Sampler weight is (1 / count)^alpha, so the resulting class share is count^(1 - alpha):
+#: alpha = 0 is the natural distribution, alpha = 1 is fully balanced. On this corpus
+#: (633/164/83/20) alpha = 1 gives Severe an 11.2x boost, and with only 20 unique Severe tiles
+#: that means showing the same handful of images over and over -- trading a class-imbalance
+#: problem for a memorisation one. alpha = 0.5 lifts Severe from 2.2% to 8.7% of each epoch,
+#: a 3.9x boost, which is enough exposure without that.
+SAMPLER_ALPHA = 0.5
 
-    Class weights in the loss already scale each sample's gradient, but with 20 Severe tiles
-    against 633 Healthy the rare classes are barely *seen* -- most epochs a minibatch contains
-    no Severe example at all. Sampling with replacement in inverse proportion to class frequency
-    fixes the exposure; the loss weights then handle the magnitude.
+
+def _sampler_kwargs(dataset, balanced: bool) -> dict:
+    """Frequency-aware sampling for the training split.
+
+    With 20 Severe tiles against 633 Healthy, most minibatches under plain shuffling contain no
+    Severe example at all, so the rare classes are barely *seen* however heavily they are
+    weighted in the loss.
+
+    Important: when this sampler is active the loss must NOT also apply inverse-frequency class
+    weights. Doing both corrects the same imbalance twice -- measured on this corpus, Severe
+    ended up boosted 32x, the model over-predicted rare classes, and fold-1 accuracy collapsed
+    to 0.139 against a 0.400 baseline. The sampler owns exposure; the loss stays neutral.
     """
     if not balanced:
         return {"shuffle": True}
@@ -53,7 +68,7 @@ def _sampler_kwargs(dataset, balanced: bool) -> dict:
         return {"shuffle": True}
     counts = np.bincount(labels, minlength=4).astype(float)
     counts[counts == 0] = 1.0
-    weights = (1.0 / counts)[labels]
+    weights = np.power(1.0 / counts, SAMPLER_ALPHA)[labels]
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=torch.as_tensor(weights, dtype=torch.double),
         num_samples=len(labels),
@@ -291,8 +306,10 @@ def train_model(
 
         opt = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(config.epochs, 1))
+        # See _sampler_kwargs: exposure and loss weighting must not both correct the imbalance.
+        effective_weights = None if balanced_sampling else class_weights
         loss_fn = DualLoss(
-            class_weights=class_weights.to(dev) if class_weights is not None else None,
+            class_weights=effective_weights.to(dev) if effective_weights is not None else None,
             label_smoothing=config.label_smoothing,
         )
 

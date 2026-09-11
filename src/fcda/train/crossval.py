@@ -34,7 +34,7 @@ from ..eval.calibration import CalibrationResult, apply_temperature, fit_tempera
 from ..eval.metrics import Metrics, compute_metrics
 from ..splits import kfold_indices
 from .correction import TrainConfig
-from .loop import DualLoss, compute_class_weights, evaluate, train_model
+from .loop import DualLoss, evaluate, train_model
 
 
 @dataclass
@@ -143,7 +143,7 @@ def run_cross_validation(
                 device=device,
                 batch_size=batch_size,
                 max_minutes=max_minutes_per_fold,
-                class_weights=compute_class_weights(labels[inner_train]),
+                class_weights=None,  # the sampler owns imbalance correction; see loop._sampler_kwargs
                 checkpoint=(checkpoint_dir / f"{model_name}_fold{k}.pt") if checkpoint_dir else None,
                 verbose=verbose,
                 tag=f"{model_name} f{k}",
@@ -152,7 +152,9 @@ def run_cross_validation(
                 raise RuntimeError(res.error)
 
             dev = torch.device(device)
-            loss_fn = DualLoss(class_weights=compute_class_weights(labels[inner_train]).to(dev))
+            # Unweighted at evaluation time: training uses a frequency-aware sampler instead of
+            # loss weights, and scoring should reflect the real class distribution.
+            loss_fn = DualLoss(class_weights=None)
 
             # Calibrate on the inner validation slice.
             _, _, val_logits, val_labels = evaluate(
