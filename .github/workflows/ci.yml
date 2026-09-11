@@ -18,10 +18,16 @@ jobs:
       - name: Set up Python 3.12
         run: uv venv --python 3.12 .venv
 
-      - name: Install (CPU torch)
+      # Torch comes from its own CPU index, installed on its own. Passing that index as an
+      # --extra-index-url for the whole install makes uv resolve every package against it,
+      # and it carries an ancient `requests`, which makes the resolution unsatisfiable.
+      - name: Install CPU PyTorch
         run: |
           uv pip install --python .venv/bin/python \
-            --extra-index-url https://download.pytorch.org/whl/cpu -e ".[dev]"
+            --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+      - name: Install package
+        run: uv pip install --python .venv/bin/python -e ".[dev]"
 
       - name: Lint
         run: .venv/bin/ruff check src tests

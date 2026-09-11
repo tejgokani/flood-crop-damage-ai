@@ -19,12 +19,12 @@ automatic is our answer to that.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import numpy as np
 
 
-class FitStatus(str, Enum):
+class FitStatus(StrEnum):
     OVERFIT = "OVERFIT"
     UNDERFIT = "UNDERFIT"
     OK = "OK"

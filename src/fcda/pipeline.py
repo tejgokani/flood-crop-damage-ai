@@ -39,7 +39,7 @@ from .preprocess.leakage import (
     merge_reports,
 )
 from .preprocess.transforms import build_transform
-from .splits import SplitIndices, grouped_stratified_split, kfold_indices, stratified_split
+from .splits import grouped_stratified_split, kfold_indices, stratified_split
 from .train.correction import TrainConfig, plan_correction
 from .train.diagnostics import FitStatus, diagnose
 from .train.loop import (
@@ -72,6 +72,8 @@ class ModelOutcome:
     diagnosis: dict = field(default_factory=dict)
     correction: dict = field(default_factory=dict)
     retrained: dict | None = None
+    #: Which run supplied the model used for the final test: "initial" or "corrected".
+    selected_run: str = "initial"
     final_test: dict | None = None
     seconds: float = 0.0
     ok: bool = True
@@ -309,7 +311,7 @@ def _train_diagnose_correct(
     outcome.correction = corr.to_dict()
     print(f"    {corr.describe()}")
 
-    best = first
+    outcome.selected_run = "initial"
     if corr.applied:
         retrain_budget = max(max_minutes * 0.8, 3.0)
         model2 = build()
@@ -322,7 +324,8 @@ def _train_diagnose_correct(
         outcome.retrained = second.to_dict()
         if second.ok and second.best_val_f1 > first.best_val_f1:
             print(f"    correction improved val macro-F1 {first.best_val_f1:.3f} -> {second.best_val_f1:.3f}")
-            best, model = second, model2
+            model = model2
+            outcome.selected_run = "corrected"
         else:
             got = second.best_val_f1 if second.ok else float("nan")
             print(f"    correction did not improve validation ({first.best_val_f1:.3f} -> {got:.3f}); keeping the original")

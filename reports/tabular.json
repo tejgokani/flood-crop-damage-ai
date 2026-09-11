@@ -1,0 +1,183 @@
+{
+  "class_distribution": {
+    "Healthy": 20405,
+    "Mild": 6226,
+    "Moderate": 5844,
+    "Severe": 1867
+  },
+  "leakage": {
+    "clean": false,
+    "n_findings": 1,
+    "findings": [
+      {
+        "kind": "target_leakage",
+        "severity": "critical",
+        "detail": "columns used to construct the label are present and must be dropped before modelling",
+        "items": [
+          "yield",
+          "production",
+          "yield_z",
+          "yield_mean",
+          "yield_std",
+          "label_name"
+        ]
+      }
+    ]
+  },
+  "dropped_columns": [
+    "yield",
+    "production",
+    "yield_z",
+    "yield_mean",
+    "yield_std",
+    "label_name"
+  ],
+  "split_sizes": {
+    "train": 24041,
+    "val": 5156,
+    "test": 5145
+  },
+  "smote": {
+    "before": {
+      "0": 14260,
+      "1": 4329,
+      "2": 4186,
+      "3": 1266
+    },
+    "after": {
+      "0": 14260,
+      "1": 14260,
+      "2": 14260,
+      "3": 14260
+    },
+    "n_synthetic": 32999,
+    "strategy": "SMOTE"
+  },
+  "diagnosis": {
+    "status": "OVERFIT",
+    "gap": 0.6355,
+    "val_slope": -0.0,
+    "best_val": 0.3645,
+    "reason": "train macro-F1 exceeds validation by 0.636 (threshold 0.15)"
+  },
+  "correction": {
+    "technique": "depth limit + minimum leaf size + feature subsampling"
+  },
+  "val_metrics": {
+    "accuracy": 0.5591543832428238,
+    "macro_f1": 0.36449738967559475,
+    "weighted_f1": 0.5380016693465994,
+    "kappa": 0.17657877249434706,
+    "iou": 0.0,
+    "dice": 0.0,
+    "per_class_f1": {
+      "Healthy": 0.7315396113602392,
+      "Mild": 0.21635883905013192,
+      "Moderate": 0.2625994694960212,
+      "Severe": 0.24749163879598662
+    },
+    "support": {
+      "Healthy": 3127,
+      "Mild": 896,
+      "Moderate": 804,
+      "Severe": 329
+    },
+    "confusion": [
+      [
+        2447,
+        311,
+        293,
+        76
+      ],
+      [
+        560,
+        164,
+        129,
+        43
+      ],
+      [
+        412,
+        118,
+        198,
+        76
+      ],
+      [
+        144,
+        27,
+        84,
+        74
+      ]
+    ]
+  },
+  "cv": {
+    "mean_macro_f1": 0.4043103113130512,
+    "std": 0.009597772283718659,
+    "folds": [
+      0.38880501029665987,
+      0.40374164565258486,
+      0.42095209187975074,
+      0.4022277185193546,
+      0.40158096200790766,
+      0.4060222246905475,
+      0.4192485421744999,
+      0.3954760546013209,
+      0.3961528159086832,
+      0.4088960473992026
+    ]
+  },
+  "test_metrics": {
+    "accuracy": 0.5387755102040817,
+    "macro_f1": 0.3548148306571306,
+    "weighted_f1": 0.5152097961174643,
+    "kappa": 0.1561069019662109,
+    "iou": 0.0,
+    "dice": 0.0,
+    "per_class_f1": {
+      "Healthy": 0.7061156016470947,
+      "Mild": 0.22664255575647982,
+      "Moderate": 0.2757731958762887,
+      "Severe": 0.210727969348659
+    },
+    "support": {
+      "Healthy": 3018,
+      "Mild": 1001,
+      "Moderate": 854,
+      "Severe": 272
+    },
+    "confusion": [
+      [
+        2315,
+        333,
+        279,
+        91
+      ],
+      [
+        631,
+        188,
+        142,
+        40
+      ],
+      [
+        468,
+        108,
+        214,
+        64
+      ],
+      [
+        125,
+        29,
+        63,
+        55
+      ]
+    ]
+  },
+  "feature_importance": {
+    "area": 0.16448245084069088,
+    "crop_share": 0.15163951815133117,
+    "crop_enc": 0.1442186203508791,
+    "area_z": 0.14052856676191183,
+    "year": 0.14032362038549903,
+    "state_enc": 0.13223183506029548,
+    "area_change": 0.12657538844939262
+  }
+}

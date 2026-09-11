@@ -37,7 +37,7 @@ def comparison_table(results: dict) -> str:
         re_ = m.get("retrained") or {}
         helped = "—"
         if re_:
-            helped = "yes" if re_.get("best_val_f1", 0) > init.get("best_val_f1", 0) else "no"
+            helped = "yes" if m.get("selected_run") == "corrected" else "no"
         rows.append(
             f"| {DISPLAY_NAMES.get(m['name'], m['name'])} "
             f"| {init.get('n_params', 0) / 1e6:.1f}M "
