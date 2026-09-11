@@ -7,8 +7,8 @@ import numpy as np
 from fcda.splits import kfold_indices
 
 
-def _labels(n=300, seed=0):
-    rng = np.random.default_rng(seed)
+def _labels(n=300):
+    """Class proportions matching the real corpus: 70% Healthy down to ~3% Severe."""
     return np.concatenate([
         np.zeros(int(n * 0.7)), np.ones(int(n * 0.18)),
         np.full(int(n * 0.09), 2), np.full(max(5, int(n * 0.03)), 3),

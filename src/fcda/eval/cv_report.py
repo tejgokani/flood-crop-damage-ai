@@ -82,10 +82,15 @@ def per_class_table(cv: dict) -> str:
 
 
 def calibration_table(cv: dict) -> str:
-    rows = ["| Hybrid | Temperature | ECE before | ECE after | Mean confidence before → after |",
-            "|---|---:|---:|---:|---|"]
+    rows = ["| Hybrid | Temperature | ECE before | ECE after | Mean confidence before → after | Folds accepted |",
+            "|---|---:|---:|---:|---|:--:|"]
     for m in cv.get("models", []):
-        cals = [f["calibration"] for f in m.get("folds", []) if f.get("ok") and f.get("calibration")]
+        all_cals = [f["calibration"] for f in m.get("folds", [])
+                    if f.get("ok") and f.get("calibration")]
+        # A rejected fold contributes T=1.0 and its original ECE, so averaging over all folds
+        # reports what the pipeline would actually apply rather than a best-case subset.
+        cals = all_cals
+        n_ok = sum(1 for c in all_cals if c.get("accepted", True))
         if not cals:
             continue
         t = float(np.mean([c["temperature"] for c in cals]))
@@ -95,7 +100,7 @@ def calibration_table(cv: dict) -> str:
         ca = float(np.mean([c["mean_confidence_after"] for c in cals]))
         rows.append(
             f"| {DISPLAY_NAMES.get(m['model'], m['model'])} | {t:.3f} | {eb:.3f} | {ea:.3f} "
-            f"| {cb:.1%} → **{ca:.1%}** |"
+            f"| {cb:.1%} → **{ca:.1%}** | {n_ok}/{len(all_cals)} |"
         )
     return "\n".join(rows)
 
@@ -209,7 +214,9 @@ def build(reports: Path) -> str:
         calibration_table(cv),
         "\nTemperature scaling is fitted on an inner validation slice of each training fold and "
         "never on the held-out fold. It is argmax-invariant, so it changes only how honest the "
-        "confidence number is, never the accuracy.\n",
+        "confidence number is, never the accuracy. A fold's fit is **accepted only if it "
+        "actually reduces calibration error**; otherwise the temperature is reset to 1.0 and no "
+        "scaling is applied, which is why the accepted-folds column matters.\n",
         "\n<details><summary>Per-fold detail</summary>\n\n" + fold_table(cv) + "\n\n</details>\n",
     ]
     for name, cap in (("cv_gaps.png", "Generalisation gap per fold"),

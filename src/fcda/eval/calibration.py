@@ -31,17 +31,22 @@ class CalibrationResult:
     ece_after: float
     nll_before: float
     nll_after: float
-    mean_confidence_before: float
-    mean_confidence_after: float
-    n_fit: int
+    #: False when the fit was rejected and the temperature reset to 1.0 (no scaling).
+    accepted: bool = True
+    mean_confidence_before: float = 0.0
+    mean_confidence_after: float = 0.0
+    n_fit: int = 0
+    note: str = ""
 
     def to_dict(self) -> dict:
         return {k: (round(v, 4) if isinstance(v, float) else v) for k, v in self.__dict__.items()}
 
     def summary(self) -> str:
+        tag = "" if self.accepted else "  [REJECTED -> T=1]"
         return (
             f"T={self.temperature:.3f}  ECE {self.ece_before:.3f} -> {self.ece_after:.3f}  "
-            f"mean confidence {self.mean_confidence_before:.1%} -> {self.mean_confidence_after:.1%}"
+            f"mean confidence {self.mean_confidence_before:.1%} -> "
+            f"{self.mean_confidence_after:.1%}{tag}"
         )
 
 
@@ -72,13 +77,33 @@ def _nll(logits: torch.Tensor, labels: torch.Tensor, temperature: float = 1.0) -
     return float(F.cross_entropy(logits / temperature, labels))
 
 
+#: Sanity range for the temperature. Wide on purpose -- the real gate is the ECE test below.
+TEMPERATURE_BOUNDS = (0.1, 10.0)
+
+#: A fit is accepted only if it cuts expected calibration error by at least this fraction.
+#:
+#: "Any improvement" is too weak a test on a small inner-validation slice. One fold came back at
+#: T=0.05 -- multiplying every logit by twenty -- reporting 96.3% mean confidence off the back of
+#: an ECE change of 0.283 -> 0.260, an 8% move that is well inside the noise of ~100 samples.
+#: Requiring a 20% relative reduction separates a real correction from a fitting artefact, and
+#: keeps the pipeline from manufacturing confidence it has not earned.
+MIN_ECE_IMPROVEMENT = 0.20
+
+
 def fit_temperature(
     logits: np.ndarray,
     labels: np.ndarray,
     max_iter: int = 200,
-    bounds: tuple[float, float] = (0.05, 10.0),
+    bounds: tuple[float, float] = TEMPERATURE_BOUNDS,
+    min_samples: int = 50,
 ) -> CalibrationResult:
-    """Fit a single scalar temperature by minimising NLL on the supplied (held-in) data."""
+    """Fit a single scalar temperature by minimising NLL on the supplied (held-in) data.
+
+    The fit is **accepted only if it actually reduces expected calibration error** on the data
+    it was fitted to. Otherwise the temperature is reset to 1.0 and the result is marked
+    rejected. Reporting a sharpened confidence that does not improve calibration would be
+    inflating a number rather than correcting it.
+    """
     lg = torch.tensor(np.asarray(logits), dtype=torch.float32)
     lb = torch.tensor(np.asarray(labels), dtype=torch.long)
 
@@ -103,15 +128,36 @@ def fit_temperature(
         temperature = 1.0
 
     probs_after = torch.softmax(lg / temperature, dim=1).numpy()
+    ece_after = expected_calibration_error(probs_after, np.asarray(labels))
+
+    accepted, note = True, ""
+    if len(labels) < min_samples:
+        accepted, note = False, f"only {len(labels)} samples to fit on (min {min_samples})"
+    elif ece_before <= 1e-6:
+        accepted, note = False, "already calibrated; nothing to correct"
+    elif ece_after > ece_before * (1.0 - MIN_ECE_IMPROVEMENT):
+        accepted, note = (
+            False,
+            f"calibration error fell only {100 * (1 - ece_after / ece_before):.0f}% "
+            f"(need {100 * MIN_ECE_IMPROVEMENT:.0f}%)",
+        )
+
+    if not accepted:
+        temperature = 1.0
+        probs_after = probs_before
+        ece_after = ece_before
+
     return CalibrationResult(
         temperature=temperature,
+        accepted=accepted,
         ece_before=ece_before,
-        ece_after=expected_calibration_error(probs_after, np.asarray(labels)),
+        ece_after=ece_after,
         nll_before=nll_before,
         nll_after=_nll(lg, lb, temperature),
         mean_confidence_before=float(probs_before.max(axis=1).mean()),
         mean_confidence_after=float(probs_after.max(axis=1).mean()),
         n_fit=len(labels),
+        note=note,
     )
 
 
