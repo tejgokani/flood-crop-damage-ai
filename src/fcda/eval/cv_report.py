@@ -23,8 +23,49 @@ def _agg():
 
 
 def load(reports: Path) -> dict | None:
-    p = reports / "cv_results.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    """Assemble the cross-validation results.
+
+    ``run_cv_pipeline`` writes ``cv_results.json`` when it trains every model in one go, but
+    each model also writes its own ``cv_<model>.json`` after every fold. Models sometimes have
+    to be run separately -- they do not all cost the same per epoch, and matching their epoch
+    budgets means matching their wall-clock caps individually. Merging the per-model files
+    keeps a split run indistinguishable from a single one, and means an interrupted run still
+    reports whatever completed.
+    """
+    from ..models.registry import MODELS
+
+    combined = reports / "cv_results.json"
+    base: dict = json.loads(combined.read_text()) if combined.exists() else {}
+
+    per_model: dict[str, dict] = {}
+    for name in MODELS:
+        path = reports / f"cv_{name}.json"
+        if path.exists():
+            per_model[name] = json.loads(path.read_text())
+    if not per_model and not base:
+        return None
+
+    # Per-model files are the source of truth: they are rewritten after every fold.
+    models = [per_model.get(m["model"], m) for m in base.get("models", [])]
+    known = {m["model"] for m in models}
+    models.extend(v for k, v in per_model.items() if k not in known)
+
+    meta = {k: v for k, v in base.items() if k != "models"}
+    meta.setdefault("n_tiles", max((m.get("n_samples", 0) for m in models), default=0))
+    meta.setdefault("n_folds", max((m.get("n_folds", 0) for m in models), default=0))
+    meta.setdefault("image_size", 192)
+    meta.setdefault("device", "mps")
+    if "class_distribution" not in meta:
+        idx = reports.parent / "data" / "index_900_strat.json"
+        if idx.exists():
+            from .. import SEVERITY_CLASSES
+            recs = json.loads(idx.read_text())
+            meta["class_distribution"] = {
+                c: sum(1 for r in recs if r["label"] == i)
+                for i, c in enumerate(SEVERITY_CLASSES)
+            }
+    meta["models"] = models
+    return meta
 
 
 def headline_table(cv: dict) -> str:

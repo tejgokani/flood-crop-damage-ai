@@ -1,0 +1,481 @@
+{
+  "model": "yolo12_unet",
+  "n_folds": 5,
+  "n_samples": 900,
+  "mean_gap": -0.076,
+  "seconds": 3407.0,
+  "folds": [
+    {
+      "fold": 1,
+      "n_train": 612,
+      "n_inner_val": 108,
+      "n_test": 180,
+      "best_val_f1": 0.505275974025974,
+      "gap": -0.09592910165283253,
+      "epochs_run": 10,
+      "seconds": 630.0376150608063,
+      "metrics": {
+        "accuracy": 0.7,
+        "macro_f1": 0.38803251866243993,
+        "weighted_f1": 0.6943174603174603,
+        "kappa": 0.33764906303236797,
+        "iou": 0.16394100948556395,
+        "dice": 0.28169985961405763,
+        "within_one_accuracy": 0.9722222222222222,
+        "ordinal_mae": 0.3277777777777778,
+        "binary_accuracy": 0.7777777777777778,
+        "binary_f1": 0.6226415094339622,
+        "per_class_f1": {
+          "Healthy": 0.84251968503937,
+          "Mild": 0.38961038961038963,
+          "Moderate": 0.32,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 127,
+          "Mild": 33,
+          "Moderate": 16,
+          "Severe": 4
+        },
+        "confusion": [
+          [
+            107,
+            18,
+            2,
+            0
+          ],
+          [
+            18,
+            15,
+            0,
+            0
+          ],
+          [
+            2,
+            10,
+            4,
+            0
+          ],
+          [
+            0,
+            1,
+            3,
+            0
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 0.3479,
+        "ece_before": 0.227,
+        "ece_after": 0.06,
+        "nll_before": 0.7019,
+        "nll_after": 0.5031,
+        "accepted": true,
+        "mean_confidence_before": 0.5688,
+        "mean_confidence_after": 0.7925,
+        "n_fit": 108,
+        "note": ""
+      },
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 2,
+      "n_train": 612,
+      "n_inner_val": 108,
+      "n_test": 180,
+      "best_val_f1": 0.4999241734910525,
+      "gap": -0.0925733057575921,
+      "epochs_run": 11,
+      "seconds": 629.6766970157623,
+      "metrics": {
+        "accuracy": 0.7166666666666667,
+        "macro_f1": 0.47674091830432375,
+        "weighted_f1": 0.6878861672958871,
+        "kappa": 0.3136448598130841,
+        "iou": 0.20617454881099856,
+        "dice": 0.3418651952393419,
+        "within_one_accuracy": 0.9222222222222223,
+        "ordinal_mae": 0.3611111111111111,
+        "binary_accuracy": 0.7722222222222223,
+        "binary_f1": 0.5393258426966292,
+        "per_class_f1": {
+          "Healthy": 0.8487084870848709,
+          "Mild": 0.2608695652173913,
+          "Moderate": 0.35294117647058826,
+          "Severe": 0.4444444444444444
+        },
+        "support": {
+          "Healthy": 127,
+          "Mild": 33,
+          "Moderate": 16,
+          "Severe": 4
+        },
+        "confusion": [
+          [
+            115,
+            6,
+            6,
+            0
+          ],
+          [
+            22,
+            6,
+            4,
+            1
+          ],
+          [
+            7,
+            1,
+            6,
+            2
+          ],
+          [
+            0,
+            0,
+            2,
+            2
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 0.4204,
+        "ece_before": 0.1559,
+        "ece_after": 0.0544,
+        "nll_before": 0.6691,
+        "nll_after": 0.5194,
+        "accepted": true,
+        "mean_confidence_before": 0.5941,
+        "mean_confidence_after": 0.7829,
+        "n_fit": 108,
+        "note": ""
+      },
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 3,
+      "n_train": 612,
+      "n_inner_val": 108,
+      "n_test": 180,
+      "best_val_f1": 0.49126126126126124,
+      "gap": 0.030594458758512966,
+      "epochs_run": 14,
+      "seconds": 791.283191204071,
+      "metrics": {
+        "accuracy": 0.6944444444444444,
+        "macro_f1": 0.37268702965914124,
+        "weighted_f1": 0.6900772219762924,
+        "kappa": 0.35643242540466746,
+        "iou": 0.21770301297971043,
+        "dice": 0.357563397083157,
+        "within_one_accuracy": 0.9555555555555556,
+        "ordinal_mae": 0.35,
+        "binary_accuracy": 0.8166666666666667,
+        "binary_f1": 0.6972477064220184,
+        "per_class_f1": {
+          "Healthy": 0.8685258964143426,
+          "Mild": 0.2222222222222222,
+          "Moderate": 0.4,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 127,
+          "Mild": 32,
+          "Moderate": 17,
+          "Severe": 4
+        },
+        "confusion": [
+          [
+            109,
+            12,
+            6,
+            0
+          ],
+          [
+            13,
+            6,
+            13,
+            0
+          ],
+          [
+            2,
+            4,
+            10,
+            1
+          ],
+          [
+            0,
+            0,
+            4,
+            0
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 0.6182,
+        "ece_before": 0.1297,
+        "ece_after": 0.0663,
+        "nll_before": 0.6821,
+        "nll_after": 0.6351,
+        "accepted": true,
+        "mean_confidence_before": 0.6378,
+        "mean_confidence_after": 0.7338,
+        "n_fit": 108,
+        "note": ""
+      },
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 4,
+      "n_train": 612,
+      "n_inner_val": 108,
+      "n_test": 180,
+      "best_val_f1": 0.5050298380221654,
+      "gap": -0.08704324445333744,
+      "epochs_run": 14,
+      "seconds": 774.2441730499268,
+      "metrics": {
+        "accuracy": 0.7666666666666667,
+        "macro_f1": 0.49264750580540057,
+        "weighted_f1": 0.7650486518907572,
+        "kappa": 0.5131062020995685,
+        "iou": 0.20915646801813442,
+        "dice": 0.3459543467702768,
+        "within_one_accuracy": 0.9666666666666667,
+        "ordinal_mae": 0.26666666666666666,
+        "binary_accuracy": 0.8277777777777777,
+        "binary_f1": 0.7256637168141593,
+        "per_class_f1": {
+          "Healthy": 0.8744939271255061,
+          "Mild": 0.5555555555555556,
+          "Moderate": 0.5405405405405406,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 126,
+          "Mild": 33,
+          "Moderate": 17,
+          "Severe": 4
+        },
+        "confusion": [
+          [
+            108,
+            15,
+            3,
+            0
+          ],
+          [
+            10,
+            20,
+            3,
+            0
+          ],
+          [
+            3,
+            4,
+            10,
+            0
+          ],
+          [
+            0,
+            0,
+            4,
+            0
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 0.4649,
+        "ece_before": 0.1192,
+        "ece_after": 0.0745,
+        "nll_before": 0.5973,
+        "nll_after": 0.4907,
+        "accepted": true,
+        "mean_confidence_before": 0.6493,
+        "mean_confidence_after": 0.8026,
+        "n_fit": 108,
+        "note": ""
+      },
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 5,
+      "n_train": 612,
+      "n_inner_val": 108,
+      "n_test": 180,
+      "best_val_f1": 0.6118743498880486,
+      "gap": -0.1352161018616242,
+      "epochs_run": 12,
+      "seconds": 581.7088298797607,
+      "metrics": {
+        "accuracy": 0.6888888888888889,
+        "macro_f1": 0.4480332558555337,
+        "weighted_f1": 0.7069207541172497,
+        "kappa": 0.4027020621000237,
+        "iou": 0.22893634206673735,
+        "dice": 0.3725764048636214,
+        "within_one_accuracy": 0.9388888888888889,
+        "ordinal_mae": 0.38333333333333336,
+        "binary_accuracy": 0.7944444444444444,
+        "binary_f1": 0.704,
+        "per_class_f1": {
+          "Healthy": 0.8425531914893617,
+          "Mild": 0.5,
+          "Moderate": 0.21428571428571427,
+          "Severe": 0.23529411764705882
+        },
+        "support": {
+          "Healthy": 126,
+          "Mild": 33,
+          "Moderate": 17,
+          "Severe": 4
+        },
+        "confusion": [
+          [
+            99,
+            21,
+            4,
+            2
+          ],
+          [
+            8,
+            20,
+            3,
+            2
+          ],
+          [
+            2,
+            5,
+            3,
+            7
+          ],
+          [
+            0,
+            1,
+            1,
+            2
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 0.5265,
+        "ece_before": 0.1843,
+        "ece_after": 0.1327,
+        "nll_before": 0.7086,
+        "nll_after": 0.631,
+        "accepted": true,
+        "mean_confidence_before": 0.6003,
+        "mean_confidence_after": 0.7332,
+        "n_fit": 108,
+        "note": ""
+      },
+      "ok": true,
+      "error": ""
+    }
+  ],
+  "oof_metrics": {
+    "accuracy": 0.7133333333333334,
+    "macro_f1": 0.46176482423299564,
+    "weighted_f1": 0.7153366432927092,
+    "kappa": 0.3879519850704567,
+    "iou": 0.20518227627222893,
+    "dice": 0.33993184071409094,
+    "within_one_accuracy": 0.9511111111111111,
+    "ordinal_mae": 0.3377777777777778,
+    "binary_accuracy": 0.7977777777777778,
+    "binary_f1": 0.6642066420664207,
+    "per_class_f1": {
+      "Healthy": 0.8553259141494436,
+      "Mild": 0.4072948328267477,
+      "Moderate": 0.3793103448275862,
+      "Severe": 0.20512820512820512
+    },
+    "support": {
+      "Healthy": 633,
+      "Mild": 164,
+      "Moderate": 83,
+      "Severe": 20
+    },
+    "confusion": [
+      [
+        538,
+        72,
+        21,
+        2
+      ],
+      [
+        71,
+        67,
+        23,
+        3
+      ],
+      [
+        16,
+        24,
+        33,
+        10
+      ],
+      [
+        0,
+        2,
+        14,
+        4
+      ]
+    ],
+    "n_scored": 900,
+    "segmentation_is_fold_mean": true
+  },
+  "oof_metrics_calibrated": {
+    "accuracy": 0.7133333333333334,
+    "macro_f1": 0.46176482423299564,
+    "weighted_f1": 0.7153366432927092,
+    "kappa": 0.3879519850704567,
+    "iou": 0.20518227627222893,
+    "dice": 0.33993184071409094,
+    "within_one_accuracy": 0.9511111111111111,
+    "ordinal_mae": 0.3377777777777778,
+    "binary_accuracy": 0.7977777777777778,
+    "binary_f1": 0.6642066420664207,
+    "per_class_f1": {
+      "Healthy": 0.8553259141494436,
+      "Mild": 0.4072948328267477,
+      "Moderate": 0.3793103448275862,
+      "Severe": 0.20512820512820512
+    },
+    "support": {
+      "Healthy": 633,
+      "Mild": 164,
+      "Moderate": 83,
+      "Severe": 20
+    },
+    "confusion": [
+      [
+        538,
+        72,
+        21,
+        2
+      ],
+      [
+        71,
+        67,
+        23,
+        3
+      ],
+      [
+        16,
+        24,
+        33,
+        10
+      ],
+      [
+        0,
+        2,
+        14,
+        4
+      ]
+    ]
+  }
+}

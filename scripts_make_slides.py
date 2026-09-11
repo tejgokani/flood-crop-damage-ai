@@ -165,23 +165,50 @@ p.font.size, p.font.color.rgb, p.font.italic = Pt(11), AMBER, True
 tb.text_frame.word_wrap = True
 
 # ---------------------------------------------------------------- 7 architectures
-s = slide("The five hybrid architectures", "Shared U-Net decoder and shared severity head — so the comparison isolates the encoder")
-rows = [["#", "Hybrid", "Encoder", "Why it is in the benchmark"],
-        ["1", "YOLO12 + U-Net", "R-ELAN + area attention\n(implemented natively)", "Detects field parcels while segmenting water inside them"],
-        ["2", "ResNet + U-Net", "timm resnet34", "The established baseline to measure against"],
-        ["3", "EfficientNet + Attention", "efficientnet_b0 + CBAM\n+ attention-gated skips", "Best accuracy per FLOP; the shape TDAVM-UNet validates for agriculture"],
-        ["4", "Swin Transformer + U-Net", "swinv2_tiny", "Global receptive field at linear cost — long-range boundary precision"],
-        ["5", "CNN + LSTM", "CNN + ConvLSTM at every scale", "Consumes the real pre-monsoon / monsoon pair"]]
-t = table(s, rows, 0.5, 1.5, 12.35, 4.3, fs=10)
-for col, w in zip(t.columns, [0.45, 2.8, 3.1, 6.0]):
+s = slide("Two hybrid architectures, developed in depth",
+          "All five were implemented and benchmarked; two were carried forward. Shared decoder and head.")
+rows = [["Hybrid", "Params", "Encoder", "Input", "Why this one"],
+        ["YOLO12 + U-Net", "5.5M", "R-ELAN + area attention\n(implemented natively)",
+         "6-channel change stack\n[post VV,VH,ratio, ΔVV,ΔVH,Δratio]",
+         "Was the weakest, for a diagnosable\nreason: from scratch, peaked at epoch 1"],
+        ["CNN + LSTM", "9.0M", "Shared CNN +\nConvLSTM at every scale",
+         "Ordered pre/post pair\n[T=2, 3 channels]",
+         "The only model of the five that\ndid not overfit (gap +0.093)"]]
+t = table(s, rows, 0.5, 1.5, 12.35, 2.1, fs=10)
+for col, w in zip(t.columns, [2.2, 0.8, 2.8, 3.3, 3.25]):
     col.width = Emu(Inches(w))
-tb = s.shapes.add_textbox(Inches(0.5), Inches(6.0), Inches(12.35), Inches(1.1))
+bullets(s, [
+    "They are architecturally complementary: one reaches the pre→post change through an explicit difference channel, the other through recurrence. Comparing those says something; comparing two ImageNet CNNs would not.",
+    "The other three (ResNet+U-Net, EfficientNet+Attention, Swin+U-Net) remain in the repo with their benchmarked results archived — this is depth over breadth, stated up front.",
+], top=3.85, size=12.5, gap=12)
+
+# ---------------------------------------------------------------- 7b the overfitting fix
+s = slide("The problem was memorisation, not architecture",
+          "Train-val macro-F1 gap in the five-model benchmark")
+rows = [["Model", "Gap", "Verdict"],
+        ["Swin + U-Net", "+0.350", "memorising"],
+        ["EfficientNet + Attention", "+0.319", "memorising"],
+        ["ResNet + U-Net", "+0.292", "memorising"],
+        ["YOLO12 + U-Net", "+0.185", "memorising — peaked at epoch 1"],
+        ["CNN + LSTM", "+0.093", "the only healthy model"]]
+table(s, rows, 0.6, 1.5, 5.9, 2.6, fs=11)
+bullets(s, [
+    "5-fold cross validation — every tile scored out-of-fold",
+    "Change-detection input (the static scene cancels)",
+    "YOLO12 narrowed 9.8M → 5.5M",
+    "Flood-fraction regression loss",
+    "Dihedral augmentation (8×) + crop + coarse dropout",
+    "Regularisation raised at the start, not reactively",
+    "Frequency-aware sampling (α = 0.5)",
+    "Temperature-scaled confidence",
+], left=6.9, top=1.55, width=6.0, size=12, gap=7)
+tb = s.shapes.add_textbox(Inches(0.6), Inches(4.35), Inches(6.0), Inches(1.6))
 tb.text_frame.word_wrap = True
-p = tb.text_frame.paragraphs[0]
-p.text = ("Shared head: the severity classifier reads average-pooled features, max-pooled features, and "
-          "mean(sigmoid(segmentation)) — the predicted net flood fraction. Since the severity label is "
-          "defined as that fraction, the classifier is handed the exact quantity the target is built from.")
-p.font.size, p.font.color.rgb = Pt(11), SLATE
+p_ = tb.text_frame.paragraphs[0]
+p_.text = ("Note what is NOT on that list: training longer. A model that peaks at epoch 1 does not "
+           "improve at epoch 40. The freed compute bought better estimates and stronger "
+           "regularisation instead.")
+p_.font.size, p_.font.color.rgb, p_.font.italic = Pt(12), AMBER, True
 
 # ---------------------------------------------------------------- 8 data
 s = slide("Data", "Both sources public, no credentials, nothing bulk-downloaded")
@@ -214,50 +241,63 @@ bullets(s, [
 ], left=8.2, top=1.6, width=4.6, size=12, gap=10)
 
 # ---------------------------------------------------------------- 10 results
-s = slide("Results", "")
-results, scaling, tabular = load("results.json"), load("scaling_log.json"), load("tabular.json")
-if results and results.get("tiers"):
-    from importlib import import_module
-    import sys
-    sys.path.insert(0, str(ROOT / "src"))
-    DISPLAY = import_module("fcda.models.registry").DISPLAY_NAMES
-    tier = results["tiers"][-1]
-    s.shapes.title  # noqa
-    hdr = [["Hybrid", "Params", "Test macro-F1", "Accuracy", "κ", "Flood IoU", "Diagnosis"]]
-    ranked = sorted(tier["models"], key=lambda m: (m.get("final_test") or {}).get("macro_f1", -1), reverse=True)
-    for m in ranked:
-        t_ = m.get("final_test") or {}
-        hdr.append([DISPLAY.get(m["name"], m["name"]),
-                    f"{(m.get('initial') or {}).get('n_params', 0)/1e6:.1f}M",
-                    f"{t_.get('macro_f1', 0):.3f}", f"{t_.get('accuracy', 0):.3f}",
-                    f"{t_.get('kappa', 0):.3f}", f"{t_.get('iou', 0):.3f}",
-                    (m.get("diagnosis") or {}).get("status", "—")])
-    table(s, hdr, 0.5, 1.45, 12.35, 2.6, fs=10.5)
-    sub = s.shapes.add_textbox(Inches(0.5), Inches(4.2), Inches(12.35), Inches(2.6))
-    sub.text_frame.word_wrap = True
-    p = sub.text_frame.paragraphs[0]
-    p.text = (f"Deepest tier completed: {tier['tier']} — {tier['n_tiles']} tiles at "
-              f"{tier['image_size']}px on {tier['device']}.  Class distribution "
-              f"{tier.get('class_distribution', {})}.")
-    p.font.size, p.font.color.rgb = Pt(12), SLATE
-    if tabular:
-        tm, cv = tabular.get("test_metrics", {}), tabular.get("cv", {})
-        q = sub.text_frame.add_paragraph()
-        q.text = (f"Tabular pipeline — test macro-F1 {tm.get('macro_f1', 0):.3f}, "
-                  f"10-fold CV {cv.get('mean_macro_f1', 0):.3f} ± {cv.get('std', 0):.3f}. "
-                  f"Target leakage caught and dropped: {', '.join(tabular.get('dropped_columns', []))}.")
-        q.font.size, q.font.color.rgb = Pt(12), SLATE
-    if scaling:
-        q = sub.text_frame.add_paragraph()
-        q.text = f"Scaling stopped because: {scaling.get('stopped_because', '')}"
-        q.font.size, q.font.color.rgb, q.font.italic = Pt(11), AMBER, True
+import sys as _sys
+_sys.path.insert(0, str(ROOT / "src"))
+from fcda.eval.cv_report import (  # noqa: E402
+    calibration_table, headline_table, load as load_cv, supplementary_table,
+)
+
+cv = load_cv(REPORTS)
+if cv:
+    s = slide("Results — 5-fold cross validation",
+              f"Every one of {cv.get('n_tiles', 0)} tiles scored exactly once by a model that never saw it")
+
+    def md_table(md, left, top, width, height, fs=10.5):
+        lines = [ln for ln in md.strip().split("\n") if ln.strip().startswith("|")]
+        rows_ = [[c.strip() for c in ln.strip().strip("|").split("|")] for ln in lines]
+        rows_ = [r for r in rows_ if not all(set(c) <= set("-: ") for c in r)]
+        rows_ = [[c.replace("**", "") for c in r] for r in rows_]
+        return table(s, rows_, left, top, width, height, fs=fs)
+
+    md_table(headline_table(cv), 0.5, 1.45, 12.35, 1.5)
+    tb = s.shapes.add_textbox(Inches(0.5), Inches(3.05), Inches(12.35), Inches(0.6))
+    tb.text_frame.word_wrap = True
+    p_ = tb.text_frame.paragraphs[0]
+    p_.text = ("Train-val gap is the anti-overfitting check: ≤ 0.10 is healthy, and negative means "
+               "validation scored above training. The five-model baseline ran at +0.19 to +0.35.")
+    p_.font.size, p_.font.color.rgb = Pt(11), SLATE
+
+    md_table(supplementary_table(cv), 0.5, 3.7, 12.35, 1.3)
+    tb = s.shapes.add_textbox(Inches(0.5), Inches(5.15), Inches(12.35), Inches(1.9))
+    tb.text_frame.word_wrap = True
+    p_ = tb.text_frame.paragraphs[0]
+    p_.text = ("Supplementary, not a replacement. Macro-F1 treats the four classes as unrelated, so "
+               "calling a Severe tile Moderate scores as badly as calling it Healthy — and every "
+               "Severe miss in our confusion matrices lands on Moderate, the adjacent class.")
+    p_.font.size, p_.font.color.rgb = Pt(11.5), SLATE
+
+    # calibration slide
+    s = slide("Confidence calibration", "Temperature scaling, fitted on inner folds only")
+    md_table2 = calibration_table(cv)
+    lines = [ln for ln in md_table2.strip().split("\n") if ln.strip().startswith("|")]
+    rows_ = [[c.strip().replace("**", "") for c in ln.strip().strip("|").split("|")] for ln in lines]
+    rows_ = [r for r in rows_ if not all(set(c) <= set("-: ") for c in r)]
+    table(s, rows_, 0.6, 1.5, 12.1, 1.4, fs=11)
+    bullets(s, [
+        "An uncalibrated softmax is a score that sums to one, not a probability.",
+        "Temperature scaling divides the logits by one learned scalar — it is argmax-invariant, so it cannot change accuracy, only how honest the confidence is.",
+        "Fitted on an inner validation slice of each training fold, never on the held-out fold.",
+        "A fold's fit is accepted only if it cuts calibration error by at least 20%; otherwise the temperature resets to 1.0 and nothing is applied.",
+        "Paper 4 of our review names temperature scaling as its first future-work item.",
+    ], top=3.2, size=13, gap=11)
 else:
-    bullets(s, ["Training run in progress — regenerate this deck with `python scripts_make_slides.py`."])
+    s = slide("Results", "")
+    bullets(s, ["Cross-validation run in progress — regenerate with `python scripts_make_slides.py`."])
 
 # ---------------------------------------------------------------- 11 figures
-for fig, title in (("learning_curves.png", "Learning curves — initial training and after correction"),
-                   ("confusion_matrices.png", "Confusion matrices on the held-out test split"),
-                   ("scaling.png", "What the machine actually sustained")):
+for fig, title in (("cv_gaps.png", "Generalisation gap per fold — below the line is healthy"),
+                   ("cv_confusion.png", "Out-of-fold confusion over every tile in the dataset"),
+                   ("predictions.png", "Predictions across severity classes")):
     fp = REPORTS / "figures" / fig
     if fp.exists():
         s = slide(title)
@@ -278,16 +318,18 @@ bullets(s, [
 # ---------------------------------------------------------------- 13 limitations
 s = slide("Honest limitations", "Stated because they are the questions worth asking")
 bullets(s, [
+    "Agricultural field delineation is NOT implemented. The brief asks to identify agricultural fields; this system segments water. ETCI-2021 has no parcel labels, so YOLO12's detection head is present but unsupervised, and the crop context comes from district statistics. This is the largest gap against the brief.",
     "Severity is derived from flood extent, not measured agronomic damage — ETCI-2021 has flood masks, not crop-damage ground truth. Validation against field-surveyed loss is NOT claimed.",
-    "Only 20 Severe tiles exist in the whole pool (0.98% natural prior), so Severe-class F1 is noisy by construction. This is the corpus ceiling and is what GAN augmentation pushes against.",
+    "Only 20 Severe tiles exist in the whole pool (0.98%). Cross validation scores all 20 rather than the ~3 a single holdout would, but it remains the corpus ceiling.",
     "Tiers cap Healthy at 45% to make the benchmark usable; the natural 86.9% prior is reported alongside every result, not hidden.",
     "Training geography is the Ganges–Brahmaputra delta — a reasonable analogue for eastern India, but cross-region transfer is untested. FLNet states the same limitation about itself.",
     "Rupee figures use assumed per-severity loss coefficients, surfaced as parameters rather than fitted values.",
-], size=13, gap=13)
+], size=11.5, gap=9)
 
 # ---------------------------------------------------------------- 14 remaining
 s = slide("What remains — the other 40%")
 bullets(s, [
+    "Supervised agricultural field delineation — needs a cropland mask or parcel labels",
     "Validation against field-surveyed crop loss (BFCD-22, or state revenue records)",
     "Cross-region transfer to Indian districts, and domain adaptation",
     "Sentinel-1 + Sentinel-2 fusion, as FLNet's future work proposes",
