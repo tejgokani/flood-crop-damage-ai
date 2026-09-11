@@ -222,7 +222,8 @@ def results_section(results: dict, scaling: dict | None, tabular: dict | None) -
         )
 
     figs = []
-    for name, cap in (("learning_curves.png", "Learning curves"),
+    for name, cap in (("predictions.png", "Predictions across severity classes"),
+                      ("learning_curves.png", "Learning curves"),
                       ("confusion_matrices.png", "Confusion matrices"),
                       ("scaling.png", "Progressive scaling")):
         if (Path("reports/figures") / name).exists():
@@ -271,6 +272,14 @@ def build_all(reports: Path) -> dict:
         p = fn(results, figs / name)
         if p:
             made.append(str(p))
+    try:
+        from .qualitative import render_best
+        q = render_best(reports, Path("data"), Path("checkpoints"))
+        if q:
+            made.append(str(q))
+    except Exception as exc:  # noqa: BLE001 - a figure must never fail the report
+        print(f"  (qualitative panel skipped: {exc})")
+
     scaling_path = reports / "scaling_log.json"
     if scaling_path.exists():
         p = plot_scaling(json.loads(scaling_path.read_text()), figs / "scaling.png")
