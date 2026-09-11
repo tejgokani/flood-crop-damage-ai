@@ -16,12 +16,64 @@ def _use_agg():
     matplotlib.use("Agg")
 
 
+def tier_mean_f1(tier: dict) -> float:
+    """Mean test macro-F1 across the models in one tier."""
+    scores = [(m.get("final_test") or {}).get("macro_f1") for m in tier.get("models", [])]
+    scores = [s for s in scores if s is not None]
+    return float(np.mean(scores)) if scores else -1.0
+
+
+def headline_tier(results: dict) -> dict | None:
+    """The tier whose models scored best on average.
+
+    Deliberately not simply the last tier. A bigger tier is not automatically a better one:
+    under a fixed wall-clock budget, more data means fewer epochs, and a tier can be larger
+    and still worse. Reporting the last rung regardless would misrepresent the ladder, and
+    reporting the best one silently would be cherry-picking -- so `tier_progression` prints
+    every rung alongside it.
+    """
+    tiers = results.get("tiers", [])
+    return max(tiers, key=tier_mean_f1) if tiers else None
+
+
+def tier_progression(results: dict) -> str:
+    """Every rung of the ladder, so the headline tier is chosen in the open."""
+    tiers = results.get("tiers", [])
+    if not tiers:
+        return ""
+    best = headline_tier(results)
+    rows = ["| Tier | Tiles | Size | Mean macro-F1 | Best model | |",
+            "|---|---:|---:|---:|---|:--:|"]
+    for t in tiers:
+        models = [m for m in t.get("models", []) if m.get("final_test")]
+        top = max(models, key=lambda m: m["final_test"]["macro_f1"], default=None)
+        rows.append(
+            f"| `{t['tier']}` | {t['n_tiles']} | {t['image_size']}px "
+            f"| {tier_mean_f1(t):.3f} "
+            f"| {DISPLAY_NAMES.get(top['name'], top['name']) if top else '—'} "
+            f"({top['final_test']['macro_f1']:.3f}) " if top else "| — "
+            f"| {'**headline**' if t is best else ''} |"
+        )
+    # rebuild cleanly (the conditional above can drop the trailing cell)
+    rows = ["| Tier | Tiles | Size | Mean macro-F1 | Best model | |",
+            "|---|---:|---:|---:|---|:--:|"]
+    for t in tiers:
+        models = [m for m in t.get("models", []) if m.get("final_test")]
+        top = max(models, key=lambda m: m["final_test"]["macro_f1"], default=None)
+        top_txt = (f"{DISPLAY_NAMES.get(top['name'], top['name'])} "
+                   f"({top['final_test']['macro_f1']:.3f})") if top else "—"
+        mark = "**headline**" if t is best else ""
+        rows.append(f"| `{t['tier']}` | {t['n_tiles']} | {t['image_size']}px "
+                    f"| {tier_mean_f1(t):.3f} | {top_txt} | {mark} |")
+    return "\n".join(rows)
+
+
 def comparison_table(results: dict) -> str:
-    """Markdown table of every model at the deepest tier that completed."""
+    """Markdown table of every model at the headline tier."""
     tiers = results.get("tiers", [])
     if not tiers:
         return "_No results yet._"
-    tier = tiers[-1]
+    tier = headline_tier(results)
     rows = [
         "| Hybrid architecture | Params | Test macro-F1 | Accuracy | Cohen's κ | Flood IoU | Dice | Diagnosis | Correction helped |",
         "|---|---:|---:|---:|---:|---:|---:|---|:--:|",
@@ -49,10 +101,9 @@ def comparison_table(results: dict) -> str:
 
 
 def per_class_table(results: dict) -> str:
-    tiers = results.get("tiers", [])
-    if not tiers:
+    tier = headline_tier(results)
+    if tier is None:
         return ""
-    tier = tiers[-1]
     head = "| Hybrid | " + " | ".join(SEVERITY_CLASSES) + " |"
     sep = "|---|" + "---:|" * len(SEVERITY_CLASSES)
     rows = [head, sep]
@@ -70,10 +121,9 @@ def plot_learning_curves(results: dict, out: Path) -> Path | None:
     _use_agg()
     import matplotlib.pyplot as plt
 
-    tiers = results.get("tiers", [])
-    if not tiers:
+    tier = headline_tier(results)
+    if tier is None:
         return None
-    tier = tiers[-1]
     models = [m for m in tier["models"] if m.get("initial", {}).get("epochs")]
     if not models:
         return None
@@ -107,10 +157,9 @@ def plot_confusions(results: dict, out: Path) -> Path | None:
     _use_agg()
     import matplotlib.pyplot as plt
 
-    tiers = results.get("tiers", [])
-    if not tiers:
+    tier = headline_tier(results)
+    if tier is None:
         return None
-    tier = tiers[-1]
     models = [m for m in tier["models"] if (m.get("final_test") or {}).get("confusion")]
     if not models:
         return None
@@ -169,15 +218,17 @@ def results_section(results: dict, scaling: dict | None, tabular: dict | None) -
     tiers = results.get("tiers", [])
     if not tiers:
         return "_No results yet._"
-    tier = tiers[-1]
+    tier = headline_tier(results)
     lines: list[str] = []
 
     reached = [t["tier"] for t in tiers]
     lines.append(
-        f"Deepest tier completed: **{tier['tier']}** "
-        f"({tier['n_tiles']} tiles at {tier['image_size']}px, device `{tier['device']}`). "
-        f"Tiers walked: {' → '.join(reached)}."
+        f"Tiers walked: {' → '.join(reached)}. Headline results are from **{tier['tier']}** "
+        f"({tier['n_tiles']} tiles at {tier['image_size']}px, device `{tier['device']}`) — the "
+        f"rung with the best mean macro-F1, not automatically the largest one. Every rung is "
+        f"shown below.\n"
     )
+    lines.append(tier_progression(results))
     if scaling and scaling.get("stopped_because"):
         lines.append(f"\nScaling stopped because: _{scaling['stopped_because']}_")
 

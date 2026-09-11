@@ -468,11 +468,23 @@ def run_progressive(
     budget_minutes: float = 45.0,
     device: str = "auto",
     verbose: bool = True,
+    resume: bool = False,
 ) -> dict:
-    """Walk the tier ladder, stopping when the machine can no longer take the next rung."""
+    """Walk the tier ladder, stopping when the machine can no longer take the next rung.
+
+    With ``resume``, tiers already present in ``reports/results.json`` are carried forward
+    instead of being recomputed, so a ladder can be continued after an interruption without
+    throwing away the rungs that already finished.
+    """
     log = cap.ScalingLog(machine=cap.machine_profile())
     reports_dir.mkdir(parents=True, exist_ok=True)
     results: list[PipelineResult] = []
+    prior: list[dict] = []
+    if resume and (reports_dir / "results.json").exists():
+        prior = json.loads((reports_dir / "results.json").read_text()).get("tiers", [])
+        prior = [t for t in prior if t["tier"] != start_tier]
+        if prior and verbose:
+            print(f"[resume] carrying forward tiers: {[t['tier'] for t in prior]}")
     tier = get_tier(start_tier)
 
     while True:
@@ -487,7 +499,7 @@ def run_progressive(
 
         # Persist after every tier: a run interrupted at 4am still leaves a complete table.
         (reports_dir / "results.json").write_text(
-            json.dumps({"tiers": [r.to_dict() for r in results]}, indent=2)
+            json.dumps({"tiers": prior + [r.to_dict() for r in results]}, indent=2)
         )
 
         epoch_times = [
@@ -520,5 +532,5 @@ def run_progressive(
             break
         tier = nxt
 
-    return {"tiers": [r.to_dict() for r in results], "scaling": json.loads(
+    return {"tiers": prior + [r.to_dict() for r in results], "scaling": json.loads(
         (reports_dir / "scaling_log.json").read_text())}

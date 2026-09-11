@@ -70,6 +70,7 @@ def _cmd_train(args) -> int:
             start_tier=args.tier, offline=args.offline,
             max_minutes_per_model=args.max_minutes, gan_epochs=args.gan_epochs,
             budget_minutes=args.budget, device=args.device, verbose=True,
+            resume=args.resume,
         )
         print(f"\nFinished at tier {out['scaling']['final_tier']}: {out['scaling']['stopped_because']}")
         return 0
@@ -125,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--max-minutes", type=float, default=25.0)
     t.add_argument("--gan-epochs", type=int, default=30)
     t.add_argument("--budget", type=float, default=45.0, help="per-tier budget for the capacity gate")
+    t.add_argument("--resume", action="store_true",
+                   help="carry forward tiers already present in reports/results.json")
     t.add_argument("--device", default="auto")
     t.set_defaults(func=_cmd_train)
 

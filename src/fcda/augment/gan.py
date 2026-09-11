@@ -231,10 +231,37 @@ def generate_samples(
     return out
 
 
-def deficit_counts(labels: np.ndarray, cap: int | None = None) -> dict[int, int]:
-    """How many synthetic tiles each class needs to reach the majority class count."""
+#: Synthetic tiles are capped at this multiple of the real training set.
+#:
+#: Balancing every class all the way up to the majority count sounds principled, but on a
+#: corpus whose natural prior is 87% Healthy it more than doubles the training set: measured
+#: at T3, epoch time went from 56s to 242s, which under a fixed wall-clock budget bought far
+#: fewer epochs than the extra data was worth. It also lets GAN artefacts outnumber real
+#: pixels for the rarest class, which is the opposite of what augmentation is for.
+MAX_SYNTHETIC_FRACTION = 0.5
+
+
+def deficit_counts(
+    labels: np.ndarray,
+    cap: int | None = None,
+    max_fraction: float = MAX_SYNTHETIC_FRACTION,
+) -> dict[int, int]:
+    """How many synthetic tiles each class needs, subject to a total budget.
+
+    Classes are first given their full deficit to the majority count, then scaled back
+    proportionally if the total exceeds ``max_fraction`` of the real training set. Scaling
+    proportionally rather than truncating keeps the relative emphasis on the rarest classes.
+    """
     counts = {int(c): int((labels == c).sum()) for c in range(NUM_CLASSES)}
     target = max(counts.values()) if counts else 0
     if cap is not None:
         target = min(target, cap)
-    return {c: max(0, target - n) for c, n in counts.items()}
+    deficits = {c: max(0, target - n) for c, n in counts.items()}
+
+    total_real = int(sum(counts.values()))
+    budget = int(total_real * max_fraction)
+    total_deficit = sum(deficits.values())
+    if total_deficit > budget > 0:
+        scale = budget / total_deficit
+        deficits = {c: int(round(v * scale)) for c, v in deficits.items()}
+    return deficits
