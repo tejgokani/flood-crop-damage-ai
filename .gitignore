@@ -7,9 +7,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Data (fetched on demand -- never committed)
-data/
-!data/.gitkeep
+# Dataset cache, fetched on demand -- never committed.
+# Anchored with a leading slash: an unanchored 'data/' would also swallow src/fcda/data/.
+/data/
+!/data/.gitkeep
 
 # Training artefacts
 checkpoints/
@@ -17,8 +18,8 @@ checkpoints/
 *.pth
 
 # Generated reports keep their structure but not their heavy outputs
-reports/figures/*.png
-!reports/figures/.gitkeep
+/reports/figures/*.png
+!/reports/figures/.gitkeep
 
 # OS
 .DS_Store
