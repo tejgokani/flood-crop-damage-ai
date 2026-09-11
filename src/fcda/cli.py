@@ -84,6 +84,18 @@ def _cmd_train(args) -> int:
     return 0
 
 
+def _cmd_cv(args) -> int:
+    from .pipeline import run_cv_pipeline
+
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    run_cv_pipeline(
+        get_tier(args.tier), DATA_ROOT, args.models or all_model_names(), REPORTS,
+        offline=args.offline, n_folds=args.folds,
+        max_minutes_per_fold=args.max_minutes, device=args.device, verbose=True,
+    )
+    return 0
+
+
 def _cmd_tabular(args) -> int:
     from .data.download import download_india_csv
     from .pipeline import run_tabular_pipeline
@@ -130,6 +142,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="carry forward tiers already present in reports/results.json")
     t.add_argument("--device", default="auto")
     t.set_defaults(func=_cmd_train)
+
+    cv = sub.add_parser("cv", help="k-fold cross validation (headline evaluation)")
+    cv.add_argument("--tier", default="T3_medium", choices=[x.name for x in TIERS])
+    cv.add_argument("--models", nargs="*", choices=all_model_names())
+    cv.add_argument("--folds", type=int, default=5)
+    cv.add_argument("--max-minutes", type=float, default=14.0, help="wall-clock cap per fold")
+    cv.add_argument("--offline", action="store_true")
+    cv.add_argument("--device", default="auto")
+    cv.set_defaults(func=_cmd_cv)
 
     tb = sub.add_parser("tabular", help="the CSV/SMOTE sequence")
     tb.set_defaults(func=_cmd_tabular)

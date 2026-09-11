@@ -37,6 +37,31 @@ def pick_device(prefer: str = "auto") -> str:
     return "cpu"
 
 
+def _sampler_kwargs(dataset, balanced: bool) -> dict:
+    """Class-balanced sampling for the training split.
+
+    Class weights in the loss already scale each sample's gradient, but with 20 Severe tiles
+    against 633 Healthy the rare classes are barely *seen* -- most epochs a minibatch contains
+    no Severe example at all. Sampling with replacement in inverse proportion to class frequency
+    fixes the exposure; the loss weights then handle the magnitude.
+    """
+    if not balanced:
+        return {"shuffle": True}
+    try:
+        labels = np.array([int(dataset[i][2]) for i in range(len(dataset))])
+    except Exception:  # noqa: BLE001 - any dataset that cannot be indexed falls back to shuffling
+        return {"shuffle": True}
+    counts = np.bincount(labels, minlength=4).astype(float)
+    counts[counts == 0] = 1.0
+    weights = (1.0 / counts)[labels]
+    sampler = torch.utils.data.WeightedRandomSampler(
+        weights=torch.as_tensor(weights, dtype=torch.double),
+        num_samples=len(labels),
+        replacement=True,
+    )
+    return {"sampler": sampler}
+
+
 class ListDataset(Dataset):
     """Wraps a list of ``(image, mask, label)`` triples, real or GAN-generated."""
 
@@ -48,7 +73,13 @@ class ListDataset(Dataset):
 
     def __getitem__(self, i):
         img, mask, label = self.items[i]
-        return torch.from_numpy(np.asarray(img)).float(), torch.from_numpy(np.asarray(mask)).float(), int(label)
+        m = np.asarray(mask, dtype=np.float32)
+        return (
+            torch.from_numpy(np.asarray(img)).float(),
+            torch.from_numpy(m),
+            int(label),
+            np.float32(m.mean()),
+        )
 
 
 class ConcatWithSynthetic(Dataset):
@@ -85,6 +116,8 @@ class TrainResult:
     epochs: list[EpochRecord] = field(default_factory=list)
     best_val_f1: float = 0.0
     best_epoch: int = -1
+    #: Final training macro-F1 minus best validation macro-F1. <= 0.10 means healthy.
+    gap: float = 0.0
     seconds: float = 0.0
     stopped_reason: str = ""
     n_params: int = 0
@@ -106,6 +139,7 @@ class TrainResult:
             "error": self.error,
             "best_val_f1": round(self.best_val_f1, 4),
             "best_epoch": self.best_epoch,
+            "gap": round(self.gap, 4),
             "seconds": round(self.seconds, 1),
             "stopped_reason": self.stopped_reason,
             "n_params": self.n_params,
@@ -128,11 +162,14 @@ class DualLoss(nn.Module):
         class_weights: torch.Tensor | None = None,
         seg_weight: float = 1.0,
         cls_weight: float = 1.0,
+        frac_weight: float = 2.0,
         label_smoothing: float = 0.0,
     ):
         super().__init__()
         self.seg_weight = seg_weight
         self.cls_weight = cls_weight
+        #: Weight on the flood-fraction regression term. See forward() for why it exists.
+        self.frac_weight = frac_weight
         self.ce = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=label_smoothing)
 
     @staticmethod
@@ -142,11 +179,24 @@ class DualLoss(nn.Module):
         den = prob.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3)) + eps
         return (1.0 - num / den).mean()
 
-    def forward(self, seg_logits, cls_logits, seg_target, cls_target):
+    def forward(self, seg_logits, cls_logits, seg_target, cls_target, frac_target=None):
+        """Segmentation + severity + flood-fraction regression.
+
+        The third term is the important one for this dataset. Severity is a deterministic
+        binning of the net flood fraction at 2%/10%/33%, so four sparse class labels are a
+        lossy encoding of one dense continuous quantity. Supervising the predicted fraction
+        directly means every tile contributes a gradient to the ordinal structure, instead of
+        the Severe boundary having to be inferred from the 20 Severe tiles that exist.
+        """
         bce = F.binary_cross_entropy_with_logits(seg_logits, seg_target)
         dice = self._dice(seg_logits, seg_target)
         ce = self.ce(cls_logits, cls_target)
-        return self.seg_weight * (bce + dice) + self.cls_weight * ce
+        total = self.seg_weight * (bce + dice) + self.cls_weight * ce
+
+        if frac_target is not None and self.frac_weight > 0:
+            pred_frac = torch.sigmoid(seg_logits).mean(dim=(1, 2, 3))
+            total = total + self.frac_weight * F.mse_loss(pred_frac, frac_target)
+        return total
 
 
 def compute_class_weights(labels: np.ndarray, n_classes: int = 4) -> torch.Tensor:
@@ -158,22 +208,30 @@ def compute_class_weights(labels: np.ndarray, n_classes: int = 4) -> torch.Tenso
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, loss_fn=None, collect_seg: bool = True) -> tuple[Metrics, float]:
-    """Run the model over a loader and score both heads."""
+def evaluate(
+    model, loader, device, loss_fn=None, collect_seg: bool = True, return_logits: bool = False
+):
+    """Run the model over a loader and score both heads.
+
+    With ``return_logits`` the raw class logits and labels come back too, which is what
+    temperature calibration needs to be fitted without a second forward pass.
+    """
     model.eval()
     dev = torch.device(device)
-    y_true, y_pred = [], []
+    y_true, y_pred, all_logits = [], [], []
     seg_logits, seg_targets = [], []
     total_loss, n_batches = 0.0, 0
 
-    for x, mask, y in loader:
-        x, mask, y = x.to(dev), mask.to(dev), y.to(dev)
+    for batch in loader:
+        x, mask, y = batch[0].to(dev), batch[1].to(dev), batch[2].to(dev)
+        frac = batch[3].to(dev) if len(batch) > 3 else None
         sl, cl = model(x)
         if loss_fn is not None:
-            total_loss += float(loss_fn(sl, cl, mask, y).detach())
+            total_loss += float(loss_fn(sl, cl, mask, y, frac).detach())
             n_batches += 1
         y_true.append(y.cpu().numpy())
         y_pred.append(cl.argmax(1).cpu().numpy())
+        all_logits.append(cl.float().cpu().numpy())
         if collect_seg:
             # Subsample spatially: full-resolution logits for a whole split will not fit in
             # memory at the larger tiers, and IoU over a regular 4x grid is unbiased.
@@ -186,7 +244,15 @@ def evaluate(model, loader, device, loss_fn=None, collect_seg: bool = True) -> t
         np.concatenate(seg_logits) if seg_logits else None,
         np.concatenate(seg_targets) if seg_targets else None,
     )
-    return metrics, (total_loss / max(n_batches, 1))
+    loss = total_loss / max(n_batches, 1)
+    if return_logits:
+        return (
+            metrics,
+            loss,
+            np.concatenate(all_logits) if all_logits else np.zeros((0, 4)),
+            np.concatenate(y_true) if y_true else np.array([]),
+        )
+    return metrics, loss
 
 
 def train_model(
@@ -201,6 +267,7 @@ def train_model(
     checkpoint: Path | None = None,
     verbose: bool = True,
     tag: str = "",
+    balanced_sampling: bool = True,
 ) -> TrainResult:
     """Train one model under a hard wall-clock budget, keeping the best checkpoint."""
     name = getattr(model, "name", model.__class__.__name__)
@@ -214,7 +281,12 @@ def train_model(
         if hasattr(model, "set_dropout"):
             model.set_dropout(config.dropout)
 
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=batch_size,
+            drop_last=False,
+            **_sampler_kwargs(train_ds, balanced=balanced_sampling),
+        )
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
         opt = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
@@ -231,10 +303,11 @@ def train_model(
             model.train()
             losses, yt, yp = [], [], []
 
-            for x, mask, y in train_loader:
-                x, mask, y = x.to(dev), mask.to(dev), y.to(dev)
+            for batch in train_loader:
+                x, mask, y = batch[0].to(dev), batch[1].to(dev), batch[2].to(dev)
+                frac = batch[3].to(dev) if len(batch) > 3 else None
                 sl, cl = model(x)
-                loss = loss_fn(sl, cl, mask, y)
+                loss = loss_fn(sl, cl, mask, y, frac)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
@@ -302,5 +375,8 @@ def train_model(
         if verbose:
             print(f"    [{tag or name}] FAILED: {result.error}", flush=True)
 
+    from ..eval.metrics import generalisation_gap
+
+    result.gap = generalisation_gap(result.train_curve, result.val_curve)
     result.seconds = time.time() - t_start
     return result

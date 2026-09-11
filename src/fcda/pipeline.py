@@ -30,7 +30,7 @@ from .augment.smote import balance_training_split
 from .data import capacity as cap
 from .data.etci import FloodTileDataset, build_index, load_planes, synthetic_dataset
 from .data.tiers import Tier, get_tier, next_tier
-from .eval.metrics import compute_metrics
+from .eval.metrics import Metrics, compute_metrics
 from .preprocess.leakage import (
     average_hash,
     check_duplicate_leakage,
@@ -339,6 +339,118 @@ def _train_diagnose_correct(
 
     outcome.seconds = time.time() - t0
     return outcome
+
+
+def run_cv_pipeline(
+    tier: Tier,
+    data_root: Path,
+    model_names: list[str],
+    reports_dir: Path,
+    offline: bool = False,
+    n_folds: int = 5,
+    max_minutes_per_fold: float = 14.0,
+    gan_epochs: int = 0,
+    device: str = "auto",
+    seed: int = 42,
+    verbose: bool = True,
+) -> dict:
+    """The image sequence with 10-fold-style cross validation as the headline evaluation.
+
+    Same prescribed steps as ``run_image_pipeline`` -- load, preprocess, leakage checks, CLAHE,
+    split, augment, train, diagnose, correct, evaluate -- but step 5 takes the cross-validation
+    branch that ``Sequence.docx`` offers instead of the single three-way split, and step 10
+    scores out-of-fold predictions covering every tile rather than a 135-tile holdout.
+    """
+    from .models.registry import DISPLAY_NAMES, build_model, is_temporal, wants_change_input
+    from .train.crossval import run_cross_validation, summarise
+
+    t0 = time.time()
+    dev = pick_device(device)
+    _banner(f"CROSS-VALIDATED PIPELINE  tier={tier.name}  n={tier.n_tiles}  "
+            f"size={tier.image_size}px  folds={n_folds}  device={dev}")
+
+    _step(1, "Load image dataset")
+    if offline:
+        records = []
+        labels = np.array([], dtype=int)
+    else:
+        records = build_index(data_root, tier.n_tiles, seed=seed, progress=verbose)
+        labels = np.array([r.label for r in records])
+        print(f"    loaded {len(records)} real ETCI tiles")
+    dist = {SEVERITY_CLASSES[i]: int((labels == i).sum()) for i in range(NUM_CLASSES)}
+    print(f"    class distribution: {dist}")
+
+    _step(2, "Data preprocessing")
+    train_tf = build_transform(train=True, use_clahe=True, seed=seed)
+    eval_tf = build_transform(train=False, use_clahe=True, seed=seed)
+    print(f"    train chain: {train_tf}")
+
+    _step(3, "Data leakage checks")
+    if not offline and records:
+        hashes = {}
+        for fold_i, (_, te) in enumerate(kfold_indices(labels, n_splits=n_folds, seed=seed), 1):
+            hs = {}
+            for i in te[: min(len(te), 200)]:
+                hs[records[i].tile_id] = average_hash(load_planes(data_root, records[i].tile_id)["post_vv"])
+            hashes[f"fold{fold_i}"] = hs
+        leak = check_duplicate_leakage(hashes, max_distance=2)
+    else:
+        leak = check_duplicate_leakage({})
+    print("    " + (leak.render().replace("\n", "\n    ") if leak.findings else "No leakage findings."))
+
+    _step(4, "CLAHE contrast enhancement")
+    print("    CLAHE(clip_limit=2.0, tile_grid=8) on VV and VH")
+
+    _step(5, f"{n_folds}-fold cross validation (the Sequence.docx alternative to a single split)")
+    print(f"    every one of {len(labels)} tiles is scored exactly once, by a model that never saw it")
+    print(f"    Severe tiles evaluated: {dist['Severe']} (a single 15% holdout would score ~{max(1, dist['Severe'] // n_folds)})")
+
+    _step(6, "Augmentation -- training folds only")
+    print(f"    geometric + photometric chain applied to inner-training data: {train_tf}")
+    print("    GAN augmentation is evaluated separately as an ablation (see reports/ablation.json)")
+
+    outputs: list = []
+    for name in model_names:
+        temporal = is_temporal(name)
+        change = wants_change_input(name)
+        train_base = FloodTileDataset(records, data_root, size=tier.image_size,
+                                      transform=train_tf, temporal=temporal, change=change)
+        eval_base = FloodTileDataset(records, data_root, size=tier.image_size,
+                                     transform=eval_tf, temporal=temporal, change=change)
+        _banner(f"{DISPLAY_NAMES.get(name, name)}   [{n_folds}-fold CV]")
+        _step(7, f"Training {n_folds} folds -- steps 7-9 run inside each fold")
+        cv = run_cross_validation(
+            model_name=name,
+            build=lambda n=name: build_model(n, pretrained=False),
+            train_base=train_base, eval_base=eval_base, labels=labels,
+            n_folds=n_folds, batch_size=tier.batch_size,
+            max_minutes_per_fold=max_minutes_per_fold, device=dev,
+            config=TrainConfig(epochs=tier.epochs),
+            checkpoint_dir=reports_dir.parent / "checkpoints",
+            reports_dir=reports_dir, seed=seed, verbose=verbose,
+        )
+        outputs.append(cv)
+
+        _step(8, "Overfitting / underfitting detection across folds")
+        gaps = [f.gap for f in cv.folds if f.ok]
+        verdict = "HEALTHY" if cv.mean_gap <= 0.10 else "STILL OVERFITTING"
+        print(f"    per-fold gaps: {[round(g, 3) for g in gaps]}")
+        print(f"    mean train-val gap {cv.mean_gap:+.3f} -> {verdict} (threshold 0.10)")
+
+        _step(10, "Out-of-fold evaluation over every tile")
+        mean, std = cv.fold_spread()
+        print(f"    OOF  {Metrics(**{k: v for k, v in cv.oof_metrics.items() if k in Metrics.__dataclass_fields__}).summary()}")
+        print(f"    fold-to-fold macro-F1 {mean:.3f} +/- {std:.3f}")
+
+    payload = {
+        "tier": tier.name, "n_tiles": int(len(labels)), "image_size": tier.image_size,
+        "device": dev, "n_folds": n_folds, "class_distribution": dist,
+        "leakage": leak.to_dict(), "seconds": round(time.time() - t0, 1),
+        "models": [c.to_dict() for c in outputs],
+    }
+    (reports_dir / "cv_results.json").write_text(json.dumps(payload, indent=2))
+    print("\n" + summarise(outputs))
+    return payload
 
 
 def run_tabular_pipeline(

@@ -70,14 +70,30 @@ class DetectionHead(nn.Module):
 
 
 class YOLO12UNet(FloodModel):
+    """YOLO12-style encoder + U-Net decoder over a pre/post change stack.
+
+    Two decisions here are about generalisation rather than capacity.
+
+    **Six input channels.** The model receives ``[post VV, VH, ratio, dVV, dVH, dratio]`` where
+    d = post - pre. Flood *is* change, and a difference channel is inherently more regularised
+    than raw imagery: the static scene, which is what a from-scratch model would otherwise
+    memorise, cancels out. Papers 2, 3 and 4 in the review all name joint pre/post analysis as
+    future work.
+
+    **Narrower stages.** The original widths gave 9.8M parameters trained from scratch on a few
+    hundred tiles, and the model peaked at *epoch 1* before overfitting. Halving the widths
+    matches the capacity to the data.
+    """
+
     name = "yolo12_unet"
+    change_input = True
 
     def __init__(
         self,
-        in_channels: int = 3,
-        widths: tuple[int, ...] = (32, 64, 128, 256, 512),
-        decoder_channels: tuple[int, ...] = (256, 128, 64, 32, 16),
-        dropout: float = 0.1,
+        in_channels: int = 6,
+        widths: tuple[int, ...] = (24, 48, 96, 192, 384),
+        decoder_channels: tuple[int, ...] = (192, 96, 48, 24, 16),
+        dropout: float = 0.3,
         pretrained: bool = False,  # trained from scratch; accepted for a uniform constructor
     ):
         super().__init__()

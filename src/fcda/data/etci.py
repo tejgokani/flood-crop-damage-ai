@@ -206,6 +206,7 @@ class FloodTileDataset(Dataset):
         transform=None,
         synthetic: list[dict] | None = None,
         temporal: bool = False,
+        change: bool = False,
     ) -> None:
         self.records = records
         self.root = root
@@ -213,6 +214,8 @@ class FloodTileDataset(Dataset):
         self.transform = transform
         self.synthetic = synthetic
         self.temporal = temporal
+        #: Emit a 6-channel post + (post - pre) difference stack instead of post alone.
+        self.change = change
 
     def __len__(self) -> int:
         return len(self.synthetic) if self.synthetic is not None else len(self.records)
@@ -240,20 +243,48 @@ class FloodTileDataset(Dataset):
         # Target is *net* flood: permanent water is not damage.
         target = ((mask > 0) & ~(water > 0)).astype(np.float32)[None]
 
+        needs_pre = self.temporal or self.change
+        pre = _stack_sar(planes["pre_vv"], planes["pre_vh"], self.size) if needs_pre else None
+
+        # Geometric augmentation must be applied identically to both frames and the mask, or
+        # the difference channel becomes noise and the mask stops aligning with the image.
         if self.transform is not None:
-            post = self.transform(post)
+            post, pre, target = _apply_paired(self.transform, post, pre, target)
+
+        # Computed *after* augmentation on purpose: a random crop changes how much of the tile
+        # is under water, so a fraction measured beforehand would no longer describe the image
+        # the network is shown. This is the dense regression target -- the exact quantity the
+        # severity label is binned from.
+        fraction = np.float32(target.mean())
 
         if self.temporal:
-            pre = _stack_sar(planes["pre_vv"], planes["pre_vh"], self.size)
-            if self.transform is not None:
-                pre = self.transform(pre)
             seq = np.stack([pre, post], axis=0)  # [T=2, C, H, W]
-            return torch.from_numpy(seq).float(), torch.from_numpy(target), label
+            return torch.from_numpy(seq).float(), torch.from_numpy(target), label, fraction
 
-        return torch.from_numpy(post).float(), torch.from_numpy(target), label
+        if self.change:
+            # post + (post - pre): the static scene cancels, leaving what actually changed.
+            stack = np.concatenate([post, post - pre], axis=0).astype(np.float32)
+            return torch.from_numpy(stack), torch.from_numpy(target), label, fraction
+
+        return torch.from_numpy(post).float(), torch.from_numpy(target), label, fraction
 
 
-def synthetic_dataset(n: int, size: int, seed: int = 0, temporal: bool = False, transform=None):
+def _apply_paired(transform, post: np.ndarray, pre: np.ndarray | None, target: np.ndarray):
+    """Apply one transform consistently to the post frame, the pre frame and the mask.
+
+    Transforms that carry a ``paired`` attribute are geometric and must see all three; the
+    rest (CLAHE, speckle, normalisation) are photometric and apply to the imagery only. Left
+    unsynchronised, a random rotation would rotate the post frame away from both the pre frame
+    and the target, which silently destroys the supervision.
+    """
+    from ..preprocess.transforms import apply_geometric_pair
+
+    return apply_geometric_pair(transform, post, pre, target)
+
+
+def synthetic_dataset(
+    n: int, size: int, seed: int = 0, temporal: bool = False, transform=None, change: bool = False
+):
     """Offline dataset with the identical interface, used by the smoke tier and CI."""
     return FloodTileDataset(
         records=[],
@@ -262,4 +293,5 @@ def synthetic_dataset(n: int, size: int, seed: int = 0, temporal: bool = False, 
         transform=transform,
         synthetic=make_synthetic(n, size=size, seed=seed),
         temporal=temporal,
+        change=change,
     )

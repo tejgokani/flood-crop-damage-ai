@@ -25,12 +25,15 @@ class TrainConfig:
     """Everything the correction policy is allowed to change."""
 
     lr: float = 3e-4
-    weight_decay: float = 1e-4
-    dropout: float = 0.1
+    #: Regularisation starts high rather than being raised only after overfitting is detected.
+    #: Four of the five benchmarked models had a train-validation gap above 0.19 under the old
+    #: defaults (dropout 0.1, weight decay 1e-4, no smoothing), and YOLO12 peaked at epoch 1.
+    weight_decay: float = 1e-3
+    dropout: float = 0.3
     augment_strength: float = 1.0
-    epochs: int = 12
-    patience: int = 5
-    label_smoothing: float = 0.0
+    epochs: int = 14
+    patience: int = 4
+    label_smoothing: float = 0.05
 
     def copy(self) -> TrainConfig:
         return TrainConfig(**self.__dict__)

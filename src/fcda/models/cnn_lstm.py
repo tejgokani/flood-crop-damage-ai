@@ -92,7 +92,7 @@ class CNNLSTM(FloodModel):
         in_channels: int = 3,
         widths: tuple[int, ...] = (32, 64, 128, 256),
         decoder_channels: tuple[int, ...] = (128, 64, 32),
-        dropout: float = 0.1,
+        dropout: float = 0.3,
         pretrained: bool = False,  # accepted for a uniform constructor signature
     ):
         super().__init__()

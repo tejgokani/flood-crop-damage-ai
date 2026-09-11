@@ -6,23 +6,29 @@ import pytest
 import torch
 
 from fcda import NUM_CLASSES
-from fcda.models.registry import MODELS, build_model, is_temporal
+from fcda.models.registry import ALL_MODELS, MODELS, build_model, is_temporal, wants_change_input
 
 
-@pytest.mark.parametrize("name", list(MODELS))
+def _dummy_input(name, size, batch=1):
+    if is_temporal(name):
+        return torch.randn(batch, 2, 3, size, size)
+    return torch.randn(batch, 6 if wants_change_input(name) else 3, size, size)
+
+
+@pytest.mark.parametrize("name", list(ALL_MODELS))
 @pytest.mark.parametrize("size", [128, 192, 256])
 def test_output_shapes_match_input_resolution(name, size):
     """A decoder emitting the wrong resolution silently breaks the segmentation loss."""
     model = build_model(name, pretrained=False)
     model.eval()
-    x = torch.randn(1, 2, 3, size, size) if is_temporal(name) else torch.randn(1, 3, size, size)
+    x = _dummy_input(name, size)
     with torch.no_grad():
         seg, cls = model(x)
     assert seg.shape == (1, 1, size, size), f"{name}: segmentation map misaligned with target"
     assert cls.shape == (1, NUM_CLASSES)
 
 
-@pytest.mark.parametrize("name", list(MODELS))
+@pytest.mark.parametrize("name", list(ALL_MODELS))
 def test_dropout_is_adjustable(name):
     """The over-fitting correction raises dropout, so it has to actually reach the model."""
     model = build_model(name, pretrained=False)
@@ -68,3 +74,28 @@ def test_severity_head_consumes_predicted_flood_fraction():
     # in_channels*2 (avg + max pooling) + 1 (flood fraction)
     first_linear = next(m for m in head.classifier if isinstance(m, torch.nn.Linear))
     assert first_linear.in_features == 16 * 2 + 1
+
+
+def test_only_two_models_are_carried_forward():
+    """The focused set is exactly YOLO12+U-Net and CNN+LSTM."""
+    assert set(MODELS) == {"yolo12_unet", "cnn_lstm"}
+    # The other three stay importable so their archived results remain reproducible.
+    assert set(ALL_MODELS) - set(MODELS) == {"resnet_unet", "effnet_attention", "swin_unet"}
+
+
+def test_yolo12_takes_the_change_stack_and_cnn_lstm_does_not():
+    """The two models must stay architecturally distinct.
+
+    If both consumed a pre-computed difference they would be the same experiment twice, and
+    comparing them would say nothing. YOLO12 gets the explicit difference; CNN+LSTM derives
+    the change itself through recurrence.
+    """
+    assert wants_change_input("yolo12_unet")
+    assert not wants_change_input("cnn_lstm")
+    assert is_temporal("cnn_lstm")
+    assert not is_temporal("yolo12_unet")
+
+
+def test_yolo12_capacity_was_reduced():
+    """It peaked at epoch 1 with 9.8M parameters on a few hundred tiles."""
+    assert build_model("yolo12_unet", pretrained=False).n_params() < 7e6

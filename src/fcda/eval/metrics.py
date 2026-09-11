@@ -27,6 +27,13 @@ class Metrics:
     kappa: float = 0.0
     iou: float = 0.0
     dice: float = 0.0
+    #: Ordinal: fraction of predictions within one class of the truth.
+    within_one_accuracy: float = 0.0
+    #: Ordinal: mean absolute error measured in class steps.
+    ordinal_mae: float = 0.0
+    #: Binary: any damage (Mild/Moderate/Severe) versus Healthy.
+    binary_accuracy: float = 0.0
+    binary_f1: float = 0.0
     per_class_f1: dict[str, float] = field(default_factory=dict)
     support: dict[str, int] = field(default_factory=dict)
     confusion: list[list[int]] = field(default_factory=list)
@@ -37,7 +44,8 @@ class Metrics:
     def summary(self) -> str:
         return (
             f"acc={self.accuracy:.3f} macroF1={self.macro_f1:.3f} kappa={self.kappa:.3f} "
-            f"IoU={self.iou:.3f} Dice={self.dice:.3f}"
+            f"IoU={self.iou:.3f} Dice={self.dice:.3f} "
+            f"within1={self.within_one_accuracy:.3f} binF1={self.binary_f1:.3f}"
         )
 
 
@@ -61,10 +69,61 @@ def segmentation_scores(
     return iou, dice
 
 
+def ordinal_scores(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    """Metrics that respect the fact that the four classes are *ordered*.
+
+    Macro-F1 treats Healthy/Mild/Moderate/Severe as four unrelated labels, so calling a Severe
+    tile Moderate is scored exactly as badly as calling it Healthy. Operationally those are very
+    different mistakes: the first still sends an assessor, the second does not. On the measured
+    confusion matrices every Severe miss lands on Moderate -- the adjacent class -- which macro-F1
+    alone cannot show.
+
+    Reported *alongside* the mandated four-class metrics, never instead of them.
+    """
+    if len(y_true) == 0:
+        return {"within_one_accuracy": 0.0, "ordinal_mae": 0.0}
+    diff = np.abs(y_true.astype(int) - y_pred.astype(int))
+    return {
+        "within_one_accuracy": float((diff <= 1).mean()),
+        "ordinal_mae": float(diff.mean()),
+    }
+
+
+def binary_damage_scores(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    """Any damage (Mild/Moderate/Severe) versus Healthy.
+
+    The corpus holds only 20 Severe tiles, so a four-class Severe F1 rests on a handful of
+    samples and is dominated by noise. The binary question -- is this tile damaged at all? --
+    is the one the data can actually answer, and it is also the first decision a relief
+    operation makes. Supplementary, and labelled as such.
+    """
+    if len(y_true) == 0:
+        return {"binary_accuracy": 0.0, "binary_f1": 0.0}
+    t = (np.asarray(y_true) > 0).astype(int)
+    p = (np.asarray(y_pred) > 0).astype(int)
+    return {
+        "binary_accuracy": float((t == p).mean()),
+        "binary_f1": float(f1_score(t, p, zero_division=0)),
+    }
+
+
+def generalisation_gap(train_scores: list[float], val_scores: list[float]) -> float:
+    """Final training macro-F1 minus best validation macro-F1.
+
+    Reported as a first-class metric so "the model does not overfit" is checkable rather than
+    asserted. Anything above about 0.10 means the model is memorising.
+    """
+    if not train_scores or not val_scores:
+        return 0.0
+    return float(train_scores[-1] - max(val_scores))
+
+
 def classification_scores(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     labels = list(range(NUM_CLASSES))
     per_class = f1_score(y_true, y_pred, labels=labels, average=None, zero_division=0)
     return {
+        **ordinal_scores(np.asarray(y_true), np.asarray(y_pred)),
+        **binary_damage_scores(y_true, y_pred),
         "accuracy": float((y_true == y_pred).mean()) if len(y_true) else 0.0,
         "macro_f1": float(f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0)),
         "weighted_f1": float(
