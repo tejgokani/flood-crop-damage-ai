@@ -52,43 +52,127 @@ def load_planes(root: Path, tile_id: str) -> dict[str, np.ndarray]:
     return out
 
 
+#: Largest share of a tier that the Healthy class is allowed to occupy.
+#: The natural prior is about 85% Healthy, which leaves a 150-tile tier with two Severe
+#: tiles -- too few to put one in each of train/val/test, let alone score. Capping Healthy
+#: turns the tier into a usable benchmark. The natural prior is reported alongside every
+#: result so the rebalancing is visible rather than hidden.
+HEALTHY_CAP_FRACTION = 0.45
+
+
+def label_pool(
+    root: Path,
+    thresholds: tuple[float, float, float] = DEFAULT_THRESHOLDS,
+    progress: bool = True,
+) -> list[TileRecord]:
+    """Label every tile that is already cached locally, and remember the result.
+
+    This is what makes stratified tier construction possible: we need to know each tile's
+    class before we can choose a balanced subset of them.
+    """
+    cache = root / "pool_index.json"
+    if cache.exists():
+        return [TileRecord(**r) for r in json.loads(cache.read_text())]
+
+    files = fetch_manifest(root)
+    all_ids = build_pair_index(files)
+    records: list[TileRecord] = []
+    for i, tid in enumerate(all_ids, 1):
+        try:
+            planes = load_planes(root, tid)
+        except FileNotFoundError:
+            continue  # not fetched yet; the pool is whatever is on disk
+        sev = severity_from_masks(planes["post_flood"], planes["post_water_body"], thresholds)
+        records.append(
+            TileRecord(tid, sev.label, sev.net_flood_fraction, sev.permanent_water_fraction)
+        )
+        if progress and i % 500 == 0:
+            print(f"  [label] {i}/{len(all_ids)}", flush=True)
+    cache.write_text(json.dumps([r.__dict__ for r in records], indent=2))
+    return records
+
+
+def natural_prior(records: list[TileRecord]) -> dict[str, float]:
+    """The true class distribution of the pool, before any tier rebalancing."""
+    from .. import SEVERITY_CLASSES
+
+    n = len(records) or 1
+    return {
+        SEVERITY_CLASSES[c]: round(sum(1 for r in records if r.label == c) / n, 4)
+        for c in range(len(SEVERITY_CLASSES))
+    }
+
+
 def build_index(
     root: Path,
     n_tiles: int,
     thresholds: tuple[float, float, float] = DEFAULT_THRESHOLDS,
     seed: int = 42,
     progress: bool = True,
+    stratify: bool = True,
 ) -> list[TileRecord]:
     """Fetch (if needed) and label ``n_tiles`` real tiles.
 
-    Tiles are sampled with a fixed seed from the full pair list, so growing a tier is
-    strictly additive: T2 contains every tile T1 had. That keeps the tier comparison honest,
-    because a later tier never trains on an easier sample of the data.
+    With ``stratify`` (the default) the tier takes every tile of each minority class it can
+    get, and fills the remainder with Healthy tiles up to ``HEALTHY_CAP_FRACTION``. Minority
+    tiles are drawn in a fixed seeded order, so growing a tier stays additive: every tile in
+    T1 is also in T2. A later tier therefore never trains on an easier sample.
     """
     root.mkdir(parents=True, exist_ok=True)
-    cache = root / f"index_{n_tiles}.json"
+    cache = root / f"index_{n_tiles}{'_strat' if stratify else ''}.json"
     if cache.exists():
         return [TileRecord(**r) for r in json.loads(cache.read_text())]
 
     files = fetch_manifest(root)
     all_ids = build_pair_index(files)
+
+    # Ensure the tiles we intend to consider are actually present locally.
+    have = {p.stem for p in (root / "etci" / POST_DATE / "flood_label").glob("*.png")}
+    missing = [t for t in all_ids if t not in have]
+    if missing:
+        budget = missing if stratify else missing[: max(0, n_tiles - len(have))]
+        if progress:
+            print(f"[etci] fetching {len(budget)} tiles not yet cached")
+        download_tiles(root, budget, progress=progress)
+
+    pool = label_pool(root, thresholds, progress=progress)
+    if not stratify:
+        rng = np.random.default_rng(seed)
+        order = rng.permutation(len(pool))
+        return [pool[i] for i in order[:n_tiles]]
+
+    from .. import NUM_CLASSES
+
     rng = np.random.default_rng(seed)
-    order = rng.permutation(len(all_ids))
-    chosen = [all_ids[i] for i in order[: min(n_tiles, len(all_ids))]]
+    by_class: dict[int, list[TileRecord]] = {c: [] for c in range(NUM_CLASSES)}
+    for r in pool:
+        by_class[r.label].append(r)
+    for c in by_class:
+        idx = rng.permutation(len(by_class[c]))
+        by_class[c] = [by_class[c][i] for i in idx]
 
-    if progress:
-        print(f"[etci] requesting {len(chosen)} tiles (of {len(all_ids)} available pairs)")
-    got = download_tiles(root, chosen, progress=progress)
+    healthy_quota = int(n_tiles * HEALTHY_CAP_FRACTION)
+    chosen: list[TileRecord] = list(by_class[0][:healthy_quota])
 
-    records: list[TileRecord] = []
-    for tid in got:
-        planes = load_planes(root, tid)
-        sev = severity_from_masks(planes["post_flood"], planes["post_water_body"], thresholds)
-        records.append(
-            TileRecord(tid, sev.label, sev.net_flood_fraction, sev.permanent_water_fraction)
-        )
-    cache.write_text(json.dumps([r.__dict__ for r in records], indent=2))
-    return records
+    minority = [c for c in range(1, NUM_CLASSES)]
+    remaining = n_tiles - len(chosen)
+    # Round-robin across the minority classes so the rarest is not squeezed out.
+    per_class = {c: 0 for c in minority}
+    while remaining > 0 and any(per_class[c] < len(by_class[c]) for c in minority):
+        for c in minority:
+            if remaining <= 0:
+                break
+            if per_class[c] < len(by_class[c]):
+                chosen.append(by_class[c][per_class[c]])
+                per_class[c] += 1
+                remaining -= 1
+    # If the minority classes are exhausted, top up with more Healthy tiles.
+    if remaining > 0:
+        extra = by_class[0][healthy_quota : healthy_quota + remaining]
+        chosen.extend(extra)
+
+    cache.write_text(json.dumps([r.__dict__ for r in chosen], indent=2))
+    return chosen
 
 
 def _stack_sar(vv: np.ndarray, vh: np.ndarray, size: int) -> np.ndarray:
