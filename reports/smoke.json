@@ -16,60 +16,65 @@
   },
   "gan": {
     "epochs": 2,
-    "seconds": 1.3,
+    "seconds": 3.0,
     "d_loss": 2.8131,
     "g_loss": 3.3933,
     "n_real_used": 28,
-    "n_generated": 36,
+    "n_generated": 14,
     "per_class": {
       "Healthy": 0,
-      "Mild": 9,
-      "Moderate": 11,
-      "Severe": 16
+      "Mild": 4,
+      "Moderate": 4,
+      "Severe": 6
     }
   },
-  "seconds": 40.2,
+  "seconds": 27.8,
   "models": [
     {
-      "name": "effnet_attention",
+      "name": "yolo12_unet",
       "initial": {
-        "model": "effnet_attention",
+        "model": "yolo12_unet",
         "ok": true,
         "error": "",
-        "best_val_f1": 0.125,
+        "best_val_f1": 0.0714,
         "best_epoch": 1,
-        "seconds": 15.7,
+        "gap": 0.1528,
+        "seconds": 11.9,
         "stopped_reason": "completed all epochs",
-        "n_params": 5683574,
+        "n_params": 5495290,
         "epochs": [
           {
             "epoch": 1,
-            "train_loss": 2.844062089920044,
-            "train_f1": 0.27644704433497536,
-            "val_loss": 2.97456693649292,
-            "val_f1": 0.125,
-            "seconds": 7.902953863143921
+            "train_loss": 4.09813129901886,
+            "train_f1": 0.05555555555555555,
+            "val_loss": 3.3999547958374023,
+            "val_f1": 0.07142857142857142,
+            "seconds": 5.627703905105591
           },
           {
             "epoch": 2,
-            "train_loss": 2.6981964111328125,
-            "train_f1": 0.34843182124108224,
-            "val_loss": 2.977329969406128,
-            "val_f1": 0.125,
-            "seconds": 7.712385892868042
+            "train_loss": 3.6547688245773315,
+            "train_f1": 0.2242002063983488,
+            "val_loss": 3.3752388954162598,
+            "val_f1": 0.07142857142857142,
+            "seconds": 6.093134880065918
           }
         ],
         "val_metrics": {
-          "accuracy": 0.3333333333333333,
-          "macro_f1": 0.125,
-          "weighted_f1": 0.16666666666666666,
+          "accuracy": 0.16666666666666666,
+          "macro_f1": 0.07142857142857142,
+          "weighted_f1": 0.047619047619047616,
           "kappa": 0.0,
           "iou": 0.0,
           "dice": 0.0,
+          "within_one_accuracy": 0.5,
+          "ordinal_mae": 1.3333333333333333,
+          "binary_accuracy": 0.5,
+          "binary_f1": 0.6666666666666666,
           "per_class_f1": {
             "Healthy": 0.0,
-            "Mild": 0.5,
-            "Moderate": 0.0,
+            "Mild": 0.0,
+            "Moderate": 0.2857142857142857,
             "Severe": 0.0
           },
           "support": {
@@ -81,20 +86,20 @@
           "confusion": [
             [
               0,
-              3,
               0,
+              3,
               0
             ],
             [
+              0,
               0,
               2,
-              0,
               0
             ],
             [
               0,
-              1,
               0,
+              1,
               0
             ],
             [
@@ -109,76 +114,127 @@
       },
       "diagnosis": {
         "status": "OVERFIT",
-        "gap": 0.2234,
+        "gap": 0.1528,
         "val_slope": -0.0,
-        "best_val": 0.125,
-        "reason": "train macro-F1 exceeds validation by 0.223 (threshold 0.15)"
+        "best_val": 0.0714,
+        "reason": "train macro-F1 exceeds validation by 0.153 (threshold 0.15)"
       },
       "correction": {
         "applied": true,
         "technique": "Regularisation increase (dropout, weight decay, augmentation, label smoothing) with earlier stopping",
         "changes": {
           "weight_decay": [
-            0.0001,
-            0.000647
+            0.001,
+            0.005055
           ],
           "dropout": [
-            0.1,
-            0.294059
+            0.3,
+            0.451663
           ],
           "augment_strength": [
             1.0,
-            1.646864
+            1.505543
           ],
           "patience": [
-            5,
-            3
+            4,
+            2
           ],
           "label_smoothing": [
-            0.0,
-            0.064686
+            0.05,
+            0.050554
           ]
         },
         "config": {
           "lr": 0.0003,
-          "weight_decay": 0.0006468636424821645,
-          "dropout": 0.29405909274464936,
-          "augment_strength": 1.6468636424821645,
+          "weight_decay": 0.005055432699395548,
+          "dropout": 0.4516629809818664,
+          "augment_strength": 1.5055432699395548,
           "epochs": 2,
-          "patience": 3,
-          "label_smoothing": 0.06468636424821646
+          "patience": 2,
+          "label_smoothing": 0.050554326993955484
         }
       },
       "retrained": {
-        "model": "effnet_attention",
+        "model": "yolo12_unet",
         "ok": true,
         "error": "",
-        "best_val_f1": 0.0,
-        "best_epoch": -1,
-        "seconds": 15.4,
+        "best_val_f1": 0.0714,
+        "best_epoch": 1,
+        "gap": 0.1928,
+        "seconds": 11.9,
         "stopped_reason": "completed all epochs",
-        "n_params": 5683574,
+        "n_params": 5495290,
         "epochs": [
           {
             "epoch": 1,
-            "train_loss": 2.868923157453537,
-            "train_f1": 0.2501791993317417,
-            "val_loss": 3.2120258808135986,
-            "val_f1": 0.0,
-            "seconds": 7.689334869384766
+            "train_loss": 4.633628487586975,
+            "train_f1": 0.13015873015873014,
+            "val_loss": 3.268564224243164,
+            "val_f1": 0.07142857142857142,
+            "seconds": 5.660696029663086
           },
           {
             "epoch": 2,
-            "train_loss": 2.7921395301818848,
-            "train_f1": 0.22172619047619047,
-            "val_loss": 3.242629051208496,
-            "val_f1": 0.0,
-            "seconds": 7.670991897583008
+            "train_loss": 3.3355430960655212,
+            "train_f1": 0.26418067226890757,
+            "val_loss": 3.274616241455078,
+            "val_f1": 0.07142857142857142,
+            "seconds": 5.990502834320068
           }
         ],
-        "val_metrics": null,
+        "val_metrics": {
+          "accuracy": 0.16666666666666666,
+          "macro_f1": 0.07142857142857142,
+          "weighted_f1": 0.047619047619047616,
+          "kappa": 0.0,
+          "iou": 0.0,
+          "dice": 0.0,
+          "within_one_accuracy": 0.5,
+          "ordinal_mae": 1.3333333333333333,
+          "binary_accuracy": 0.5,
+          "binary_f1": 0.6666666666666666,
+          "per_class_f1": {
+            "Healthy": 0.0,
+            "Mild": 0.0,
+            "Moderate": 0.2857142857142857,
+            "Severe": 0.0
+          },
+          "support": {
+            "Healthy": 3,
+            "Mild": 2,
+            "Moderate": 1,
+            "Severe": 0
+          },
+          "confusion": [
+            [
+              0,
+              0,
+              3,
+              0
+            ],
+            [
+              0,
+              0,
+              2,
+              0
+            ],
+            [
+              0,
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        },
         "test_metrics": null
       },
+      "selected_run": "initial",
       "final_test": {
         "accuracy": 0.16666666666666666,
         "macro_f1": 0.07142857142857142,
@@ -186,10 +242,14 @@
         "kappa": 0.0,
         "iou": 0.0,
         "dice": 0.0,
+        "within_one_accuracy": 0.3333333333333333,
+        "ordinal_mae": 1.5,
+        "binary_accuracy": 0.3333333333333333,
+        "binary_f1": 0.5,
         "per_class_f1": {
           "Healthy": 0.0,
-          "Mild": 0.2857142857142857,
-          "Moderate": 0.0,
+          "Mild": 0.0,
+          "Moderate": 0.2857142857142857,
           "Severe": 0.0
         },
         "support": {
@@ -201,20 +261,20 @@
         "confusion": [
           [
             0,
+            0,
             4,
-            0,
             0
           ],
           [
             0,
-            1,
             0,
+            1,
             0
           ],
           [
             0,
-            1,
             0,
+            1,
             0
           ],
           [
@@ -225,7 +285,7 @@
           ]
         ]
       },
-      "seconds": 38.58659315109253,
+      "seconds": 24.209016799926758,
       "ok": true,
       "error": ""
     }

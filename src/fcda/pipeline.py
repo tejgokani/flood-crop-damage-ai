@@ -127,7 +127,7 @@ def run_image_pipeline(
     verbose: bool = True,
 ) -> PipelineResult:
     """The image sequence, in Ma'am's order, at one dataset tier."""
-    from .models.registry import DISPLAY_NAMES, build_model, is_temporal
+    from .models.registry import DISPLAY_NAMES, build_model, is_temporal, wants_change_input
 
     t0 = time.time()
     dev = pick_device(device)
@@ -140,6 +140,7 @@ def run_image_pipeline(
         records = []
         base_spatial = synthetic_dataset(tier.n_tiles, tier.image_size, seed=seed)
         base_temporal = synthetic_dataset(tier.n_tiles, tier.image_size, seed=seed, temporal=True)
+        base_change = synthetic_dataset(tier.n_tiles, tier.image_size, seed=seed, change=True)
         labels = np.array([base_spatial.synthetic[i]["severity"].label for i in range(tier.n_tiles)])
         print(f"    synthetic tier: {tier.n_tiles} tiles (offline)")
     else:
@@ -202,7 +203,8 @@ def run_image_pipeline(
     if sum(deficits.values()) > 0 and gan_epochs > 0:
         gan_inputs = []
         for i in split.train[: min(len(split.train), 400)]:
-            img, mask, lab = base_for_gan[i]
+            sample = base_for_gan[i]
+            img, mask, lab = sample[0], sample[1], sample[2]
             gan_inputs.append((img.numpy(), mask.numpy(), int(lab)))
         g, gan_res = train_gan(
             gan_inputs, epochs=gan_epochs, device=dev, max_seconds=900, seed=seed, verbose=verbose
@@ -226,20 +228,24 @@ def run_image_pipeline(
     # ----------------------------- 7-9. Train, diagnose, correct, retrain
     for name in model_names:
         temporal = is_temporal(name)
+        change = wants_change_input(name)
         if offline:
-            base_tr = base_temporal if temporal else base_spatial
-            base_ev = base_temporal if temporal else base_spatial
+            base_tr = base_ev = base_temporal if temporal else (base_change if change else base_spatial)
         else:
             base_tr = FloodTileDataset(
-                records, data_root, size=tier.image_size, transform=train_tf, temporal=temporal
+                records, data_root, size=tier.image_size, transform=train_tf,
+                temporal=temporal, change=change,
             )
             base_ev = FloodTileDataset(
-                records, data_root, size=tier.image_size, transform=eval_tf, temporal=temporal
+                records, data_root, size=tier.image_size, transform=eval_tf,
+                temporal=temporal, change=change,
             )
 
         train_ds: torch.utils.data.Dataset = Subset(base_tr, split.train)
         # GAN samples are spatial; the temporal model keeps the real pairs only.
-        if synthetic_samples and not temporal:
+        # GAN tiles are single-date 3-channel images, so they can only join a model that
+        # consumes single-date 3-channel input -- not the temporal pair or the change stack.
+        if synthetic_samples and not temporal and not change:
             train_ds = ConcatWithSynthetic(train_ds, synthetic_samples)
         val_ds = Subset(base_ev, split.val)
         test_ds = Subset(base_ev, split.test)
@@ -247,7 +253,7 @@ def run_image_pipeline(
         outcome = _train_diagnose_correct(
             name=name,
             display=DISPLAY_NAMES.get(name, name),
-            build=lambda n=name: build_model(n, pretrained=not is_temporal(n)),
+            build=lambda n=name: build_model(n, pretrained=not (is_temporal(n) or wants_change_input(n))),
             train_ds=train_ds,
             val_ds=val_ds,
             test_ds=test_ds,

@@ -43,7 +43,7 @@ def _cmd_smoke(args) -> int:
     res = run_image_pipeline(
         tier,
         DATA_ROOT,
-        model_names=args.models or ["effnet_attention"],
+        model_names=args.models or ["yolo12_unet"],
         reports_dir=REPORTS,
         offline=True,
         max_minutes_per_model=args.max_minutes,
