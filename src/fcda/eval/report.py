@@ -286,8 +286,27 @@ def results_section(results: dict, scaling: dict | None, tabular: dict | None) -
 
 
 def inject_into_readme(reports: Path, readme: Path = Path("README.md")) -> None:
-    """Replace the RESULTS block in the README with freshly generated content."""
+    """Replace the RESULTS block in the README with freshly generated content.
+
+    Cross-validated results take precedence when present: they score every tile out-of-fold
+    rather than a single 135-tile holdout, so they are the honest headline.
+    """
     if not readme.exists():
+        return
+
+    from .cv_report import build as build_cv
+    from .cv_report import load as load_cv
+
+    if load_cv(reports):
+        body = build_cv(reports)
+        tabular_path = reports / "tabular.json"
+        if tabular_path.exists():
+            body += "\n" + _tabular_block(json.loads(tabular_path.read_text()))
+        _write_block(readme, body)
+        print("README updated from cross-validated results")
+        return
+
+    if not (reports / "results.json").exists():
         return
     results = json.loads((reports / "results.json").read_text())
     scaling = None
@@ -297,21 +316,45 @@ def inject_into_readme(reports: Path, readme: Path = Path("README.md")) -> None:
     if (reports / "tabular.json").exists():
         tabular = json.loads((reports / "tabular.json").read_text())
 
-    body = results_section(results, scaling, tabular)
+    _write_block(readme, results_section(results, scaling, tabular))
+
+
+def _write_block(readme: Path, body: str) -> None:
     text = readme.read_text()
     start, end = "<!-- RESULTS:START -->", "<!-- RESULTS:END -->"
     if start in text and end in text:
-        head = text.split(start)[0]
-        tail = text.split(end)[1]
+        head, tail = text.split(start)[0], text.split(end)[1]
         readme.write_text(f"{head}{start}\n{body}\n{end}{tail}")
         print(f"README results section updated ({len(body)} chars)")
 
 
+def _tabular_block(tabular: dict) -> str:
+    tm, cv_, sm = tabular.get("test_metrics", {}), tabular.get("cv", {}), tabular.get("smote", {})
+    return (
+        "\n### Tabular pipeline — Indian district crop statistics\n\n"
+        f"| Metric | Value |\n|---|---:|\n"
+        f"| Test macro-F1 | **{tm.get('macro_f1', 0):.3f}** |\n"
+        f"| Test accuracy | {tm.get('accuracy', 0):.3f} |\n"
+        f"| Cohen's κ | {tm.get('kappa', 0):.3f} |\n"
+        f"| 10-fold CV macro-F1 | {cv_.get('mean_macro_f1', 0):.3f} ± {cv_.get('std', 0):.3f} |\n"
+        f"| SMOTE | {sm.get('before', {})} → balanced (+{sm.get('n_synthetic', 0)} rows) |\n"
+        f"| Target leakage caught and dropped | `{', '.join(tabular.get('dropped_columns', []))}` |\n"
+        "\nThese numbers are low **because** the leakage check works: the six yield-derived "
+        "columns are removed before modelling. Left in, `YIELD = PRODUCTION / AREA` would drive "
+        "this to near-perfect and completely meaningless.\n"
+    )
+
+
 def build_all(reports: Path) -> dict:
     """Regenerate every figure and table that the README and slides consume."""
+    from .cv_report import load as load_cv
+
     results_path = reports / "results.json"
+    if load_cv(reports) and not results_path.exists():
+        inject_into_readme(reports)
+        return {"source": "cross-validation"}
     if not results_path.exists():
-        print(f"No {results_path}; run `fcda train` first.")
+        print(f"No {results_path}; run `fcda train` or `fcda cv` first.")
         return {}
     results = json.loads(results_path.read_text())
     figs = reports / "figures"

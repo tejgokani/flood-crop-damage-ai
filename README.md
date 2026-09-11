@@ -8,13 +8,21 @@
 > **VIT Tech-a-thon, Fall Semester 2026–27 — Problem Statement 6** · Agriculture + Disaster Management
 
 Floods destroy crops across large regions, and field surveys are impossible in the days that
-matter most — the roads are under water. This system estimates crop damage from
+matter most — the roads are under water. This system estimates flood-induced crop damage from
 **cloud-penetrating Sentinel-1 SAR satellite imagery** and reports it as
 **Healthy → Mild → Moderate → Severe**, then converts that into hectares, tonnes and rupees
 using real Indian district crop statistics.
 
-**Five hybrid architectures are benchmarked under one identical protocol**, so a difference in
-the results table is attributable to the architecture rather than to the training recipe.
+Two hybrid architectures are developed in depth — **YOLO12 + U-Net** and **CNN + LSTM** —
+under a 5-fold cross-validated protocol, so every tile in the dataset is scored by a model that
+never saw it.
+
+> **Scope note.** All five hybrids named in the problem statement were implemented and
+> benchmarked; their results are archived in
+> [`reports/results_5model_baseline.json`](reports/results_5model_baseline.json) and remain in
+> git history. Two were then selected to be developed properly rather than five left shallow —
+> the reasoning is in [Why these two](#why-these-two). This is a depth-over-breadth choice, and
+> it is stated here rather than left to be discovered.
 
 ---
 
@@ -119,18 +127,51 @@ Tier class distribution: `{'Healthy': 180, 'Mild': 117, 'Moderate': 83, 'Severe'
 
 ---
 
-## The five hybrid architectures
+## Why these two
 
-All five end in the **same U-Net decoder and the same dual head**, so the benchmark isolates
-the encoder.
+The five-model benchmark produced a clear diagnosis: the problem was **memorisation, not
+architecture**.
 
-| # | Hybrid | Encoder | Why it is here |
-|---|---|---|---|
-| 1 | **YOLO12 + U-Net** | R-ELAN stages + band-wise area attention, implemented natively | Detection localises field parcels while segmentation delineates water inside them. No `ultralytics` dependency — the AGPL package is heavy for something used only as an encoder |
-| 2 | **ResNet + U-Net** | `timm` resnet34 | The established baseline the comparison is measured against |
-| 3 | **EfficientNet + Attention** | `timm` efficientnet_b0 + CBAM + attention-gated skips | Best accuracy per FLOP; the attention shape TDAVM-UNet validates for agricultural UAV imagery |
-| 4 | **Swin Transformer + U-Net** | `timm` swinv2_tiny | Shifted-window attention gives a global receptive field at linear cost — the long-range dependency the Swin flood paper argues is needed for boundary precision |
-| 5 | **CNN + LSTM** | Shared CNN + **ConvLSTM at every scale** | Consumes the real pre-monsoon/monsoon pair. A ConvLSTM keeps the recurrent state spatial, which a vector LSTM would discard |
+| Model | Train-val gap | Verdict |
+|---|---:|---|
+| Swin + U-Net | +0.350 | memorising |
+| EfficientNet + Attention | +0.319 | memorising |
+| ResNet + U-Net | +0.292 | memorising |
+| YOLO12 + U-Net | +0.185 | memorising — **peaked at epoch 1** |
+| **CNN + LSTM** | **+0.093** | the only healthy model |
+
+- **CNN + LSTM** was the only one of the five that did not overfit. The pre/post pair acts as a
+  regulariser: the static scene is common to both frames, so the model is pushed toward what
+  actually changed.
+- **YOLO12 + U-Net** was the weakest, and its failure was diagnosable rather than mysterious —
+  9.8M parameters trained **from scratch** with no ImageNet initialisation, on a few hundred
+  tiles. It peaked at epoch 1.
+
+They are also **architecturally complementary**: one reaches the pre→post change through an
+explicit difference channel, the other through recurrence. Comparing them says something;
+comparing two ImageNet-pretrained CNN encoders would not.
+
+## The two hybrid architectures
+
+Both end in the **same U-Net decoder and the same dual head**, so the comparison isolates the encoder.
+
+| Hybrid | Params | Encoder | Input |
+|---|---:|---|---|
+| **YOLO12 + U-Net** | 5.5M | R-ELAN stages + band-wise area attention, implemented natively (no `ultralytics` dependency) | **6-channel change stack**: `[post VV, VH, ratio, ΔVV, ΔVH, Δratio]` |
+| **CNN + LSTM** | 9.0M | Shared CNN + **ConvLSTM at every scale** | **Ordered pre/post sequence** `[T=2, 3ch]` |
+
+### What changed to remove the overfitting
+
+| Change | Why |
+|---|---|
+| **5-fold cross validation** replaces the single split | Every tile scored once out-of-fold: 900 evaluation samples instead of 135, and **all 20 Severe tiles** scored instead of ~3 |
+| **Change-detection input** for YOLO12 | Differencing cancels the static scene — the very thing a from-scratch model memorises |
+| **Narrowed YOLO12** 9.8M → 5.5M | Capacity matched to a few hundred tiles |
+| **Flood-fraction regression loss** | Severity is a deterministic binning of net flood fraction, so supervising that dense quantity lets *every* tile inform the ordinal boundary rather than the Severe cut being learned from 20 examples |
+| **Full dihedral augmentation (8×)** + random resized crop + coarse dropout | Satellite imagery has no canonical "up", so all eight orientations are physically valid — the cheapest legitimate way to multiply a 700-tile training set |
+| **Regularisation raised at the start** | Previously only raised *after* overfitting was detected |
+| **Frequency-aware sampling (α=0.5)** | With 20 Severe tiles most minibatches contained none. Full balancing would boost Severe 11× and just re-show the same 20 images; α=0.5 gives a 3.9× boost |
+| **Temperature scaling** on inner-fold data | Makes the reported confidence mean what it says; argmax-invariant, so it cannot inflate accuracy |
 
 ### The shared head does something slightly unusual
 The severity classifier reads average-pooled features, **max-pooled** features, *and*
@@ -195,12 +236,13 @@ something presentable at every moment after the first hour rather than only at t
 ```bash
 make setup     # Python 3.12 venv via uv, PyTorch with MPS
 make smoke     # whole pipeline offline in under 2 minutes, no network
-make test      # 37 tests incl. leakage and augmentation-isolation assertions
+make test      # 47 tests incl. leakage, calibration and out-of-fold assertions
 ```
 
 ```bash
 make data      # fetch the smallest real tier
-make train     # progressive tiered training of all five hybrids
+make cv        # 5-fold cross validation of both hybrids  <- the headline result
+make train     # single-split tiered training (produces demo checkpoints)
 make tabular   # the CSV/SMOTE sequence on Indian crop statistics
 make report    # regenerate figures and the comparison table
 make demo      # Streamlit app
@@ -216,8 +258,8 @@ src/fcda/
   preprocess/  clahe.py transforms.py leakage.py
   augment/     gan.py smote.py          # training split only — enforced structurally
   models/      blocks.py heads.py + the five hybrids + registry.py
-  train/       loop.py diagnostics.py correction.py
-  eval/        metrics.py report.py
+  train/       loop.py diagnostics.py correction.py crossval.py
+  eval/        metrics.py report.py cv_report.py calibration.py
   splits.py  fusion.py  pipeline.py  cli.py
 docs/          literature_review.md  objective.md  sequence_compliance.md  flowchart.png
 app/           streamlit_app.py
@@ -231,25 +273,32 @@ tests/         test_no_leakage.py  test_models.py  test_severity.py
 
 These are stated because they are the questions worth asking, not because they were caught.
 
-1. **Severity is derived from flood extent, not measured crop damage.** ETCI-2021 has flood
+1. **Agricultural field delineation is not implemented.** The problem statement asks to
+   "identify agricultural fields and estimate crop damage". This system segments **water**, not
+   fields: ETCI-2021 carries no parcel labels, so YOLO12's detection head is architecturally
+   present but never supervised. The "crop" in crop damage comes from the fusion layer's
+   district statistics, not from the imagery. This is the largest gap against the brief.
+2. **Severity is derived from flood extent, not measured crop damage.** ETCI-2021 has flood
    masks, not agronomic ground truth. Validating against field-surveyed crop loss — as FLNet
    does with BFCD-22 for Bihar — is the single most valuable next step and is **not claimed here**.
-2. **Only 20 Severe tiles exist in the entire pool** (0.98% natural prior). Severe-class F1 is
+3. **Only 20 Severe tiles exist in the entire pool** (0.98% natural prior). Severe-class F1 is
    computed over a handful of test tiles and is correspondingly noisy. This is the corpus's
    ceiling, and it is precisely what the GAN augmentation exists to push against.
-3. **Tiers are class-rebalanced.** The natural prior is 86.9% Healthy, which left a 150-tile
+4. **Tiers are class-rebalanced.** The natural prior is 86.9% Healthy, which left a 150-tile
    tier with two Severe tiles. Tiers cap Healthy at 45%; the natural prior is reported
    alongside every result rather than hidden.
-4. **Geography.** Training data is the Ganges–Brahmaputra delta in Bangladesh — a reasonable
+5. **Geography.** Training data is the Ganges–Brahmaputra delta in Bangladesh — a reasonable
    analogue for the eastern Indian agricultural belt, but cross-region generalisation to other
    Indian states is untested. FLNet states the same limitation about itself.
-5. **Loss coefficients are planning assumptions.** The rupee figures use assumed per-severity
+6. **Loss coefficients are planning assumptions.** The rupee figures use assumed per-severity
    loss fractions and indicative prices, surfaced as parameters, not fitted values.
 
 ---
 
 ## What remains
 
+- **Supervised agricultural field delineation** — needs a cropland mask or parcel labels; this
+  is what would let YOLO12's detection head do the job the problem statement describes
 - Validation against field-surveyed crop loss (BFCD-22 or state revenue records)
 - Cross-region transfer to Indian districts
 - Sentinel-1 + Sentinel-2 fusion, as FLNet's future work proposes

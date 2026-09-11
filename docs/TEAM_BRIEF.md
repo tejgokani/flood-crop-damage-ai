@@ -17,6 +17,14 @@ questions will land.
 | Objective from 5–6 papers' **future work** | [`literature_review.md`](literature_review.md) + [`objective.md`](objective.md) | Second presenter |
 | Flow chart of the proposed work | [`flowchart.png`](flowchart.png) + [`sequence_compliance.md`](sequence_compliance.md) | Second presenter |
 
+### The three sentences that carry the whole defence
+
+1. *"All five techniques were implemented; two were then developed in depth because the
+   five-model run showed four of them were overfitting."*
+2. *"We cross-validate, so every tile is scored by a model that never saw it — including all 20
+   Severe tiles, where a single holdout would score three."*
+3. *"The overfitting gap is a reported metric with a chart, not a claim."*
+
 ---
 
 ## The 60-second version
@@ -82,14 +90,59 @@ direct target leakage — six columns, dropped before modelling. Leaving them in
 near-perfect and completely worthless model.
 
 **"Which model is best?"**
-Point at the results table in the README. Say what the table says — do **not** inflate it. Then
-add the honest caveat below about the Severe class.
+Point at the results table in the README. Say what the table says — do **not** inflate it.
 
-**"Why is the Severe F1 low / unstable?"**
-Because the entire corpus contains only **20 Severe tiles** — 0.98% of the pool. With a 70/15/15
-split that is roughly 14 for training and 3 each for validation and test, so the Severe F1 is
-computed over a handful of tiles and moves a lot. That is the ceiling of this dataset, not a bug
-in the method, and it is precisely the data-scarcity gap the GAN augmentation targets.
+**"Why only two techniques? The problem statement says five."**
+All five were implemented and benchmarked — the results are in
+`reports/results_5model_baseline.json` and in git history. The five-model run produced a clear
+diagnosis: **four of the five were memorising the training set** (train-val gap +0.19 to +0.35).
+Rather than ship five shallow models with a known defect, we fixed the defect on the two that
+were most informative: CNN+LSTM was the *only* model that did not overfit (+0.093), and YOLO12
+was the weakest but for a diagnosable reason — 9.8M parameters trained from scratch, peaking at
+epoch 1. They are also architecturally complementary: one gets the pre→post change as an
+explicit difference channel, the other through recurrence. Comparing those two says something;
+comparing two ImageNet-pretrained CNNs would not.
+
+**"How do you know it isn't overfitting now?"**
+It is a reported metric, not a claim. Every fold records final training macro-F1 minus best
+validation macro-F1; the README shows the per-fold values and the chart
+`reports/figures/cv_gaps.png` plots them against the 0.10 threshold. The five-model baseline ran
+at +0.19 to +0.35. After the fixes, gaps are at or below 0.10 — in places negative, meaning
+validation scores *above* training, which is what heavy augmentation should produce.
+
+**"Why is the Severe F1 low?"**
+Because the entire corpus contains only **20 Severe tiles** — 0.98% of the pool. Two things to
+say here, in this order:
+
+1. **We changed the evaluation so all 20 get scored.** A single 15% holdout scores about three
+   Severe tiles, and any number computed on three samples is noise. 5-fold cross validation
+   scores every tile exactly once, out of fold — so the Severe class is evaluated on all 20, and
+   the whole evaluation covers 900 tiles instead of 135.
+2. **The errors are off-by-one, not random.** On the measured confusion matrices every Severe
+   miss lands on **Moderate** — the adjacent class — never on Healthy. That is why we report
+   **within-1-class accuracy** and **binary damage detection** alongside the mandated 4-class
+   figure. On the same predictions where 4-class macro-F1 is 0.500, within-1 accuracy is 0.917
+   and binary damage F1 is 0.814. Those supplementary numbers are labelled as supplementary.
+
+**"Isn't reporting binary/within-1 just moving the goalposts?"**
+The 4-class result is reported first and in full, including the per-class F1 with Severe in it.
+The extra metrics are standard for *ordinal* targets, where macro-F1 scores a Severe→Moderate
+miss exactly as badly as Severe→Healthy — and operationally those are very different mistakes:
+one still sends an assessor, the other does not.
+
+**"What does the confidence percentage mean?"**
+It is calibrated by **temperature scaling**, fitted on an inner validation slice of each training
+fold and never on the held-out fold. Temperature scaling divides the logits by one learned
+scalar; it cannot change which class is predicted, so it changes only how honest the confidence
+number is. Expected calibration error before and after is in the README. Paper 4 of our review
+names temperature scaling as its first future-work item, so this is literature-grounded.
+
+**"Does it identify agricultural fields, as the problem statement asks?"**
+No — and say so plainly, because it is the biggest gap against the brief. The system segments
+**water**, not fields. ETCI-2021 carries no parcel labels, so YOLO12's detection head is
+architecturally present but never supervised. The crop context comes from the district
+statistics in the fusion layer, not from the imagery. Supervised field delineation is the first
+item in remaining work and needs a cropland mask we do not have.
 
 **"Is your severity label real ground truth?"**
 No, and we say so on the front page. ETCI-2021 gives flood masks, not agronomic crop-damage

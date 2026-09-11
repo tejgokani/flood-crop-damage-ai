@@ -58,6 +58,31 @@ def load_model(name: str, ckpt: Path):
     return model
 
 
+@st.cache_data(show_spinner=False)
+def load_temperature(name: str) -> float:
+    """Mean calibration temperature fitted across the cross-validation folds.
+
+    The confidence shown below is the calibrated one. An uncalibrated softmax is a score that
+    happens to sum to one, not a probability; temperature scaling is argmax-invariant, so this
+    changes only how honest the number is, never which class is predicted.
+    """
+    import json
+
+    import numpy as np
+
+    path = ROOT / "reports" / "cv_results.json"
+    if not path.exists():
+        return 1.0
+    cv = json.loads(path.read_text())
+    for m in cv.get("models", []):
+        if m["model"] == name:
+            temps = [f["calibration"]["temperature"] for f in m.get("folds", [])
+                     if f.get("ok") and f.get("calibration")]
+            if temps:
+                return float(np.mean(temps))
+    return 1.0
+
+
 def find_checkpoints() -> dict[str, Path]:
     """Best available checkpoint per architecture.
 
@@ -187,20 +212,27 @@ with tab_demo:
 
             from fcda.data.etci import _stack_sar
             from fcda.data.severity import severity_from_probability_map
-            from fcda.models.registry import is_temporal
+            from fcda.models.registry import is_temporal, wants_change_input
             from fcda.preprocess.transforms import build_transform
 
             model = load_model(model_name, ckpts[model_name])
             tf = build_transform(train=False, use_clahe=True)
             x = tf(_stack_sar(planes["post_vv"], planes["post_vh"], 256))
             xt = torch.from_numpy(x).float()[None]
-            if is_temporal(model_name) and "pre_vv" in planes:
+            has_pre = "pre_vv" in planes
+            if is_temporal(model_name) and has_pre:
                 pre = tf(_stack_sar(planes["pre_vv"], planes["pre_vh"], 256))
                 xt = torch.stack([torch.from_numpy(pre).float(), xt[0]], dim=0)[None]
+            elif wants_change_input(model_name):
+                # 6-channel change stack; an uploaded tile with no pre-flood frame gets zeros,
+                # which is honest (no observed change) rather than silently wrong.
+                pre = tf(_stack_sar(planes["pre_vv"], planes["pre_vh"], 256)) if has_pre else x
+                xt = torch.from_numpy(np.concatenate([x, x - pre], axis=0)).float()[None]
             with torch.no_grad():
                 seg, cls = model(xt)
             prob = torch.sigmoid(seg)[0, 0].numpy()
-            probs = torch.softmax(cls, dim=1)[0].numpy()
+            temperature = load_temperature(model_name)
+            probs = torch.softmax(cls / max(temperature, 1e-3), dim=1)[0].numpy()
             pred_mask = (prob >= 0.5).astype(np.uint8)
             pred = severity_from_probability_map(prob, thresholds=thresholds)
             pred_name, pred_conf = SEVERITY_CLASSES[int(probs.argmax())], float(probs.max())
@@ -237,7 +269,12 @@ with tab_demo:
         m1.caption("Predicted severity" if pred_name else "Rule-based severity")
         m2.metric("Net inundated", f"{truth.net_flood_fraction:.1%}")
         m3.metric("Permanent water", f"{truth.permanent_water_fraction:.1%}", help="Excluded from damage")
-        m4.metric("Confidence", f"{conf:.1%}" if conf else "—")
+        m4.metric("Confidence", f"{conf:.1%}" if conf else "—",
+                  help="Calibrated by temperature scaling fitted on held-out folds")
+        if model_name:
+            t = load_temperature(model_name)
+            if abs(t - 1.0) > 1e-3:
+                m4.caption(f"calibrated (T={t:.2f})")
 
         if pred_name and pred_name != truth.name:
             st.warning(f"Model says **{pred_name}**; the threshold rule on the reference mask says **{truth.name}**.")
@@ -311,10 +348,19 @@ limitation FLNet (arXiv 2601.03884) names in its own future work. SAR is unaffec
 A tile containing a river is not a damaged tile. The reviewed literature measures flood IoU
 at roughly half the IoU of permanent water precisely because the two get confused.
 
-### Scope boundary
-Severity is **derived from flood extent**, not from ground-truth agronomic damage — the
-ETCI-2021 corpus has no crop-damage labels. Validation against field-surveyed crop loss is
-listed as remaining work.
+### How the models are evaluated
+**5-fold cross validation**, not a single holdout. Every tile is scored exactly once by a model
+that never saw it, so the evaluation covers all 900 tiles — including **all 20 Severe tiles in
+the corpus**, where a single 15% holdout would score about three.
+
+### Scope boundary — read this before trusting a number
+- **Agricultural fields are not identified.** This system segments *water*. ETCI-2021 has no
+  parcel labels, so YOLO12's detection head is present but unsupervised. The crop context comes
+  entirely from the district statistics, not from the imagery.
+- **Severity is derived from flood extent**, not ground-truth agronomic damage.
+- **Only 20 Severe tiles exist** in the whole corpus, so Severe-class numbers are thin even
+  under cross validation.
+- **Rupee figures use assumed loss coefficients**, exposed as parameters rather than fitted.
         """
     )
     st.caption("Source: github.com/tejgokani/flood-crop-damage-ai")

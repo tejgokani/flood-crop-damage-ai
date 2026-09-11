@@ -22,7 +22,10 @@ lint:  ## Ruff
 data:  ## Fetch the smallest real tier
 	$(PY) -m fcda.cli download --tier T1_tiny
 
-train:  ## Progressive tiered training of all five hybrids
+cv:  ## 5-fold cross validation of both hybrids (the headline evaluation)
+	$(PY) -m fcda.cli cv --tier T3_medium --folds 5
+
+train:  ## Single-split tiered training (kept for the demo checkpoints)
 	$(PY) -m fcda.cli train --progressive
 
 report:  ## Regenerate figures, tables and the results section
