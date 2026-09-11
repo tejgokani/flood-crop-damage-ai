@@ -1,0 +1,24 @@
+# Environments
+.venv/
+.uvcache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Data (fetched on demand -- never committed)
+data/
+!data/.gitkeep
+
+# Training artefacts
+checkpoints/
+*.pt
+*.pth
+
+# Generated reports keep their structure but not their heavy outputs
+reports/figures/*.png
+!reports/figures/.gitkeep
+
+# OS
+.DS_Store
