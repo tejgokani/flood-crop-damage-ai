@@ -1,0 +1,38 @@
+{
+  "machine": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "processor": "arm",
+    "cpu_count": 8,
+    "total_ram_gb": 16.0,
+    "free_disk_gb": 29.62,
+    "python": "3.12.13"
+  },
+  "measurements": [
+    {
+      "tier": "T1_tiny",
+      "n_tiles": 150,
+      "image_size": 128,
+      "seconds_per_epoch": 13.429661934192364,
+      "epochs_run": 39,
+      "peak_rss_gb": 1.3547515869140625,
+      "free_disk_gb_after": 29.041351318359375,
+      "total_seconds": 1097.7135310173035,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "tier": "T2_small",
+      "n_tiles": 400,
+      "image_size": 192,
+      "seconds_per_epoch": 55.93717905931305,
+      "epochs_run": 57,
+      "peak_rss_gb": 1.3552398681640625,
+      "free_disk_gb_after": 28.009952545166016,
+      "total_seconds": 4924.73028588295,
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "final_tier": "T2_small",
+  "stopped_because": "advancing to T3_medium: projected 29 min, 1.4 GB peak, 27.9 GB disk free"
+}
