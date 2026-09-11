@@ -33,12 +33,22 @@ class Tier:
 
 
 #: Ordered from smallest to largest. Index 0 must always be runnable offline.
+#:
+#: Resolution climbs only once, at T2, and then holds at 192 px. The reason is a lesson from
+#: the first run: per-epoch cost scales with the *square* of the image size, so a tier that
+#: raised both the tile count and the resolution blew through the per-model wall-clock cap
+#: and trained for fewer epochs than the tier below it. Flood IoU went *down* from T1 to T2,
+#: which inverts the whole point of a scaling ladder.
+#:
+#: Holding resolution fixed above T2 means each rung varies only the amount of data, which is
+#: both the honest experiment ("does more data help?") and affordable enough for every model
+#: to actually finish its epochs.
 TIERS: tuple[Tier, ...] = (
     Tier("T0_smoke", 40, 128, 2, 8, "Pipeline proof. Synthetic-capable, used by CI."),
     Tier("T1_tiny", 150, 128, 8, 8, "First real ETCI data; confirms download and labels are sane."),
-    Tier("T2_small", 400, 192, 12, 8, "First meaningful training signal."),
-    Tier("T3_medium", 900, 256, 15, 4, "Target tier for headline results."),
-    Tier("T4_large", 1800, 256, 18, 4, "Only if T3 finished comfortably inside budget."),
+    Tier("T2_small", 400, 192, 14, 8, "First meaningful training signal."),
+    Tier("T3_medium", 900, 192, 14, 8, "Target tier: 2.25x the data at the same resolution."),
+    Tier("T4_large", 2000, 224, 14, 4, "Only if T3 finished comfortably inside budget."),
 )
 
 TIERS_BY_NAME: dict[str, Tier] = {t.name: t for t in TIERS}
