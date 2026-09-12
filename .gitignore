@@ -25,3 +25,6 @@ checkpoints/
 
 # PowerPoint lock files
 ~$*
+
+# Sen1Floods11 chips (135 MB, fetched on demand)
+/data/sen1floods11/

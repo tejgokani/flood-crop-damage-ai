@@ -1,0 +1,208 @@
+{
+  "model": "yolo12_unet",
+  "use_synthetic": false,
+  "n_folds": 2,
+  "mean_gap": 0.0185,
+  "seconds": 1471.7,
+  "folds": [
+    {
+      "fold": 1,
+      "n_real_train": 1515,
+      "n_synthetic": 0,
+      "n_test": 450,
+      "best_val_f1": 0.34595959595959597,
+      "gap": 0.045216874628639325,
+      "epochs_run": 6,
+      "seconds": 736.1865520477295,
+      "metrics": {
+        "accuracy": 0.7311111111111112,
+        "macro_f1": 0.3774432509444836,
+        "weighted_f1": 0.6782734271057892,
+        "kappa": 0.34840361878320814,
+        "iou": 0.2324163766541795,
+        "dice": 0.37717184071369475,
+        "within_one_accuracy": 0.9377777777777778,
+        "ordinal_mae": 0.3333333333333333,
+        "binary_accuracy": 0.7933333333333333,
+        "binary_f1": 0.579185520361991,
+        "per_class_f1": {
+          "Healthy": 0.8630338733431517,
+          "Mild": 0.125,
+          "Moderate": 0.5217391304347826,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 317,
+          "Mild": 82,
+          "Moderate": 41,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            293,
+            8,
+            16,
+            0
+          ],
+          [
+            57,
+            6,
+            19,
+            0
+          ],
+          [
+            11,
+            0,
+            30,
+            0
+          ],
+          [
+            1,
+            0,
+            9,
+            0
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 1.0,
+        "ece_before": 0.0774,
+        "ece_after": 0.0774,
+        "nll_before": 0.6705,
+        "nll_after": 0.6705,
+        "accepted": false,
+        "mean_confidence_before": 0.6844,
+        "mean_confidence_after": 0.6844,
+        "n_fit": 67,
+        "note": "calibration error fell only 12% (need 20%)"
+      },
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 2,
+      "n_real_train": 1515,
+      "n_synthetic": 0,
+      "n_test": 450,
+      "best_val_f1": 0.4094728800611153,
+      "gap": -0.008229467676398594,
+      "epochs_run": 6,
+      "seconds": 735.4736149311066,
+      "metrics": {
+        "accuracy": 0.7288888888888889,
+        "macro_f1": 0.4196736949318398,
+        "weighted_f1": 0.7052072979665347,
+        "kappa": 0.35673610948374845,
+        "iou": 0.2190427736483552,
+        "dice": 0.35936847891366974,
+        "within_one_accuracy": 0.94,
+        "ordinal_mae": 0.3333333333333333,
+        "binary_accuracy": 0.7755555555555556,
+        "binary_f1": 0.5665236051502146,
+        "per_class_f1": {
+          "Healthy": 0.848575712143928,
+          "Mild": 0.3582089552238806,
+          "Moderate": 0.47191011235955055,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 316,
+          "Mild": 82,
+          "Moderate": 42,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            283,
+            24,
+            9,
+            0
+          ],
+          [
+            50,
+            24,
+            8,
+            0
+          ],
+          [
+            17,
+            4,
+            21,
+            0
+          ],
+          [
+            1,
+            0,
+            9,
+            0
+          ]
+        ]
+      },
+      "calibration": {
+        "temperature": 1.0,
+        "ece_before": 0.1041,
+        "ece_after": 0.1041,
+        "nll_before": 0.5665,
+        "nll_after": 0.5665,
+        "accepted": false,
+        "mean_confidence_before": 0.742,
+        "mean_confidence_after": 0.742,
+        "n_fit": 67,
+        "note": "calibration error fell only -30% (need 20%)"
+      },
+      "ok": true,
+      "error": ""
+    }
+  ],
+  "oof": {
+    "accuracy": 0.73,
+    "macro_f1": 0.4041847018541249,
+    "weighted_f1": 0.695608710008542,
+    "kappa": 0.35258315472877766,
+    "iou": 0.22572957515126735,
+    "dice": 0.3682701598136823,
+    "within_one_accuracy": 0.9388888888888889,
+    "ordinal_mae": 0.3333333333333333,
+    "binary_accuracy": 0.7844444444444445,
+    "binary_f1": 0.5726872246696035,
+    "per_class_f1": {
+      "Healthy": 0.8558692421991084,
+      "Mild": 0.2608695652173913,
+      "Moderate": 0.5,
+      "Severe": 0.0
+    },
+    "support": {
+      "Healthy": 633,
+      "Mild": 164,
+      "Moderate": 83,
+      "Severe": 20
+    },
+    "confusion": [
+      [
+        576,
+        32,
+        25,
+        0
+      ],
+      [
+        107,
+        30,
+        27,
+        0
+      ],
+      [
+        28,
+        4,
+        51,
+        0
+      ],
+      [
+        2,
+        0,
+        18,
+        0
+      ]
+    ],
+    "n_scored": 900
+  }
+}
