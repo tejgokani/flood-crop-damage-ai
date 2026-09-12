@@ -110,13 +110,28 @@ def find_checkpoints() -> dict[str, Path]:
             for m in t.get("models", []):
                 selected[(m["name"], t["tier"])] = m.get("selected_run", "initial")
 
-    def rank(path: Path, model: str) -> tuple[int, int]:
-        stem = path.stem[len(model) + 1 :]           # e.g. "T2_small" or "T2_small_corrected"
+    def rank(path: Path, model: str) -> tuple[int, int, int]:
+        """Higher is better: (family, tier, preferred-run).
+
+        Cross-validated fold checkpoints outrank everything -- they are the models the reported
+        numbers come from. Single-split tier checkpoints come next, ordered by tier. The offline
+        smoke checkpoint ranks below both: it is two epochs on forty synthetic tiles and exists
+        only to prove the pipeline runs.
+
+        The earlier version fell through to -1 for any stem it did not recognise, which included
+        "fold1" -- so T0_smoke (tier index 0) outranked a real cross-validated model and the demo
+        silently loaded the smoke weights.
+        """
+        stem = path.stem[len(model) + 1 :]           # e.g. "T2_small", "T2_small_corrected", "fold3"
+        if stem.startswith("fold"):
+            return (2, 0, 0)
         corrected = stem.endswith("_corrected")
         tier = stem.removesuffix("_corrected")
         want = selected.get((model, tier), "initial")
         preferred = int(corrected == (want == "corrected"))
-        return (tier_index(tier) if tier in TIERS_BY_NAME else -1, preferred)
+        if tier == "T0_smoke":
+            return (0, 0, preferred)
+        return (1, tier_index(tier) if tier in TIERS_BY_NAME else -1, preferred)
 
     for name in MODELS:
         candidates = [p for p in ck.glob("*.pt") if p.stem.startswith(name + "_")]
@@ -147,8 +162,16 @@ with st.sidebar:
         model_name = st.selectbox(
             "Trained model", list(ckpts), format_func=lambda n: DISPLAY_NAMES.get(n, n)
         )
-        st.success(f"Checkpoint: `{ckpts[model_name].name}`")
-        st.caption("Best available checkpoint per architecture: highest tier, and the run the benchmark actually selected.")
+        ck_name = ckpts[model_name].name
+        if "_fold" in ck_name:
+            st.success(f"`{ck_name}`  \n\ncross-validated fold model — the one the reported numbers come from")
+        elif "T0_smoke" in ck_name:
+            st.warning(
+                f"`{ck_name}` — only the offline smoke checkpoint is available (two epochs on "
+                "synthetic data). Run `make cv` for the benchmarked models."
+            )
+        else:
+            st.info(f"`{ck_name}`  \n\nsingle-split run, not the cross-validated model")
     else:
         model_name = None
         st.info("No checkpoint found — running in rule-based mode. Train with `make train`.")
