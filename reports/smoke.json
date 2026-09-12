@@ -16,7 +16,7 @@
   },
   "gan": {
     "epochs": 2,
-    "seconds": 3.0,
+    "seconds": 1.2,
     "d_loss": 2.8131,
     "g_loss": 3.3933,
     "n_real_used": 28,
@@ -28,7 +28,7 @@
       "Severe": 6
     }
   },
-  "seconds": 27.8,
+  "seconds": 10.9,
   "models": [
     {
       "name": "yolo12_unet",
@@ -39,7 +39,7 @@
         "best_val_f1": 0.0714,
         "best_epoch": 1,
         "gap": 0.1528,
-        "seconds": 11.9,
+        "seconds": 4.2,
         "stopped_reason": "completed all epochs",
         "n_params": 5495290,
         "epochs": [
@@ -49,7 +49,7 @@
             "train_f1": 0.05555555555555555,
             "val_loss": 3.3999547958374023,
             "val_f1": 0.07142857142857142,
-            "seconds": 5.627703905105591
+            "seconds": 2.005434989929199
           },
           {
             "epoch": 2,
@@ -57,7 +57,7 @@
             "train_f1": 0.2242002063983488,
             "val_loss": 3.3752388954162598,
             "val_f1": 0.07142857142857142,
-            "seconds": 6.093134880065918
+            "seconds": 2.1500091552734375
           }
         ],
         "val_metrics": {
@@ -161,7 +161,7 @@
         "best_val_f1": 0.0714,
         "best_epoch": 1,
         "gap": 0.1928,
-        "seconds": 11.9,
+        "seconds": 4.9,
         "stopped_reason": "completed all epochs",
         "n_params": 5495290,
         "epochs": [
@@ -171,7 +171,7 @@
             "train_f1": 0.13015873015873014,
             "val_loss": 3.268564224243164,
             "val_f1": 0.07142857142857142,
-            "seconds": 5.660696029663086
+            "seconds": 2.637160062789917
           },
           {
             "epoch": 2,
@@ -179,7 +179,7 @@
             "train_f1": 0.26418067226890757,
             "val_loss": 3.274616241455078,
             "val_f1": 0.07142857142857142,
-            "seconds": 5.990502834320068
+            "seconds": 2.231816053390503
           }
         ],
         "val_metrics": {
@@ -285,7 +285,7 @@
           ]
         ]
       },
-      "seconds": 24.209016799926758,
+      "seconds": 9.327141761779785,
       "ok": true,
       "error": ""
     }
