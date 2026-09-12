@@ -100,6 +100,7 @@ def run(
     batch_size: int = 8,
     max_minutes: float = 25.0,
     epochs: int = 30,
+    samples_per_epoch: int | None = None,
     device: str = "cpu",
     reports_dir: Path | None = None,
     seed: int = 42,
@@ -149,9 +150,12 @@ def run(
             test_ds = FloodDataset([real[i] for i in test_idx], data_root, size, mode, eval_tf)
 
             model = build()
+            # Fixed samples-per-epoch so the with/without-synthetic arms get identical compute
+            # per epoch; otherwise the larger arm simply gets fewer epochs.
             res = train_model(
                 model, train_ds, val_ds, config, device=device, batch_size=batch_size,
                 max_minutes=max_minutes, class_weights=None, verbose=verbose,
+                samples_per_epoch=samples_per_epoch,
                 tag=f"{model_name} f{k}{'+syn' if use_synthetic else ''}",
             )
             if not res.ok:

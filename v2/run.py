@@ -64,6 +64,7 @@ def cmd_pilot(args) -> int:
             name, _build(name), pool, DATA, size=args.size, n_folds=args.folds,
             use_synthetic=use_syn, extra_healthy=extra, per_class_target=args.per_class,
             batch_size=args.batch, max_minutes=args.max_minutes, epochs=args.epochs,
+            samples_per_epoch=args.samples_per_epoch,
             device=dev, reports_dir=REPORTS, verbose=True,
         )
 
@@ -101,6 +102,7 @@ def cmd_full(args) -> int:
                 use_synthetic=not args.no_synthetic, extra_healthy=extra,
                 per_class_target=args.per_class,
                 batch_size=args.batch, max_minutes=args.max_minutes, epochs=args.epochs,
+                samples_per_epoch=args.samples_per_epoch,
                 device=dev, reports_dir=REPORTS, verbose=True)
         out[name] = r.to_dict()
         o = r.oof
@@ -128,6 +130,8 @@ def main() -> int:
         sp.add_argument("--max-minutes", type=float, default=25.0)
         sp.add_argument("--epochs", type=int, default=30)
         sp.add_argument("--per-class", type=int, default=600)
+        sp.add_argument("--samples-per-epoch", type=int, default=1600,
+                        help="fixed epoch size so with/without-synthetic arms get equal compute")
         sp.add_argument("--device", default="auto")
         sp.add_argument("--no-extra", action="store_true",
                         help="exclude the extra real Healthy tiles from training")

@@ -48,7 +48,7 @@ def pick_device(prefer: str = "auto") -> str:
 SAMPLER_ALPHA = 0.5
 
 
-def _sampler_kwargs(dataset, balanced: bool) -> dict:
+def _sampler_kwargs(dataset, balanced: bool, samples_per_epoch: int | None = None) -> dict:
     """Frequency-aware sampling for the training split.
 
     With 20 Severe tiles against 633 Healthy, most minibatches under plain shuffling contain no
@@ -71,7 +71,7 @@ def _sampler_kwargs(dataset, balanced: bool) -> dict:
     weights = np.power(1.0 / counts, SAMPLER_ALPHA)[labels]
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=torch.as_tensor(weights, dtype=torch.double),
-        num_samples=len(labels),
+        num_samples=samples_per_epoch or len(labels),
         replacement=True,
     )
     return {"sampler": sampler}
@@ -290,8 +290,16 @@ def train_model(
     verbose: bool = True,
     tag: str = "",
     balanced_sampling: bool = True,
+    samples_per_epoch: int | None = None,
 ) -> TrainResult:
-    """Train one model under a hard wall-clock budget, keeping the best checkpoint."""
+    """Train one model under a hard wall-clock budget, keeping the best checkpoint.
+
+    ``samples_per_epoch`` fixes how many samples constitute an epoch, independently of how large
+    the training set is. Without it, adding data silently changes what "an epoch" costs, and any
+    A/B against a larger training set becomes a comparison of compute rather than of data: a
+    measured case had the augmented arm complete **one** epoch against the baseline's eight under
+    the same wall-clock cap, and collapse to predicting one class for 445 of 450 test tiles.
+    """
     name = getattr(model, "name", model.__class__.__name__)
     result = TrainResult(model_name=name, n_params=getattr(model, "n_params", lambda: 0)())
     dev = torch.device(pick_device(device))
@@ -307,7 +315,8 @@ def train_model(
             train_ds,
             batch_size=batch_size,
             drop_last=False,
-            **_sampler_kwargs(train_ds, balanced=balanced_sampling),
+            **_sampler_kwargs(train_ds, balanced=balanced_sampling,
+                              samples_per_epoch=samples_per_epoch),
         )
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
