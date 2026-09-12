@@ -74,7 +74,7 @@ def headline_table(cv: dict) -> str:
         "| Hybrid | Params | OOF macro-F1 | fold σ | Accuracy | Cohen's κ | Flood IoU | Train-val gap |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for m in cv.get("models", []):
+    for m in _ranked(cv):
         o = m.get("oof_metrics", {})
         folds = [f for f in m.get("folds", []) if f.get("ok")]
         std = float(np.std([f["metrics"].get("macro_f1", 0.0) for f in folds])) if folds else 0.0
@@ -89,6 +89,12 @@ def headline_table(cv: dict) -> str:
     return "\n".join(rows)
 
 
+def _ranked(cv: dict) -> list[dict]:
+    """Models best-first by out-of-fold macro-F1, so every table reads in the same order."""
+    return sorted(cv.get("models", []),
+                  key=lambda m: m.get("oof_metrics", {}).get("macro_f1", -1), reverse=True)
+
+
 def _params(m: dict) -> str:
     known = {"yolo12_unet": "5.5M", "cnn_lstm": "9.0M"}
     return known.get(m["model"], "—")
@@ -100,7 +106,7 @@ def supplementary_table(cv: dict) -> str:
         "| Hybrid | Within-1-class accuracy | Ordinal MAE | Binary damage accuracy | Binary damage F1 |",
         "|---|---:|---:|---:|---:|",
     ]
-    for m in cv.get("models", []):
+    for m in _ranked(cv):
         o = m.get("oof_metrics", {})
         rows.append(
             f"| {DISPLAY_NAMES.get(m['model'], m['model'])} "
@@ -113,7 +119,7 @@ def supplementary_table(cv: dict) -> str:
 def per_class_table(cv: dict) -> str:
     head = "| Hybrid | " + " | ".join(SEVERITY_CLASSES) + " |"
     rows = [head, "|---|" + "---:|" * len(SEVERITY_CLASSES)]
-    for m in cv.get("models", []):
+    for m in _ranked(cv):
         f1 = m.get("oof_metrics", {}).get("per_class_f1", {})
         rows.append(
             f"| {DISPLAY_NAMES.get(m['model'], m['model'])} | "
@@ -125,7 +131,7 @@ def per_class_table(cv: dict) -> str:
 def calibration_table(cv: dict) -> str:
     rows = ["| Hybrid | Temperature | ECE before | ECE after | Mean confidence before → after | Folds accepted |",
             "|---|---:|---:|---:|---|:--:|"]
-    for m in cv.get("models", []):
+    for m in _ranked(cv):
         all_cals = [f["calibration"] for f in m.get("folds", [])
                     if f.get("ok") and f.get("calibration")]
         # A rejected fold contributes T=1.0 and its original ECE, so averaging over all folds
@@ -149,7 +155,7 @@ def calibration_table(cv: dict) -> str:
 def fold_table(cv: dict) -> str:
     rows = ["| Hybrid | Fold | Test tiles | macro-F1 | Accuracy | Train-val gap | Epochs |",
             "|---|---:|---:|---:|---:|---:|---:|"]
-    for m in cv.get("models", []):
+    for m in _ranked(cv):
         for f in m.get("folds", []):
             met = f.get("metrics", {})
             rows.append(

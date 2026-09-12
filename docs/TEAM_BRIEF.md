@@ -17,13 +17,29 @@ questions will land.
 | Objective from 5–6 papers' **future work** | [`literature_review.md`](literature_review.md) + [`objective.md`](objective.md) | Second presenter |
 | Flow chart of the proposed work | [`flowchart.png`](flowchart.png) + [`sequence_compliance.md`](sequence_compliance.md) | Second presenter |
 
+### The numbers, memorised
+
+| | YOLO12 + U-Net | CNN + LSTM |
+|---|---:|---:|
+| OOF macro-F1 | **0.462** ±0.048 | 0.459 ±0.041 |
+| Accuracy | **0.713** | 0.688 |
+| Within-1-class accuracy | **0.951** | 0.934 |
+| Binary damage F1 | 0.664 | **0.692** |
+| Severe-class F1 | 0.205 | 0.194 |
+| Train-val gap | **−0.076** ✅ | **−0.096** ✅ |
+| Confidence after calibration | 61% → **77%** | 59% → **73%** |
+
+Evaluated by 5-fold cross validation over all 900 tiles. Compare against the five-model
+single-split baseline, where YOLO12 scored 0.342 macro-F1 / 0.400 accuracy with a +0.185 gap.
+
 ### The three sentences that carry the whole defence
 
 1. *"All five techniques were implemented; two were then developed in depth because the
    five-model run showed four of them were overfitting."*
 2. *"We cross-validate, so every tile is scored by a model that never saw it — including all 20
    Severe tiles, where a single holdout would score three."*
-3. *"The overfitting gap is a reported metric with a chart, not a claim."*
+3. *"The overfitting gap is a reported metric with a chart, not a claim — all ten folds are
+   below the threshold and eight are negative."*
 
 ---
 
@@ -111,8 +127,9 @@ at +0.19 to +0.35. After the fixes, gaps are at or below 0.10 — in places nega
 validation scores *above* training, which is what heavy augmentation should produce.
 
 **"Why is the Severe F1 low?"**
-Because the entire corpus contains only **20 Severe tiles** — 0.98% of the pool. Two things to
-say here, in this order:
+It is **0.205**, not zero — and it was zero on every one of the five models under the old
+single-split evaluation. The corpus contains only **20 Severe tiles** (0.98% of the pool), so
+two things to say, in this order:
 
 1. **We changed the evaluation so all 20 get scored.** A single 15% holdout scores about three
    Severe tiles, and any number computed on three samples is noise. 5-fold cross validation

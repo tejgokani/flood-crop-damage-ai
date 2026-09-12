@@ -66,14 +66,15 @@ def load_temperature(name: str) -> float:
     happens to sum to one, not a probability; temperature scaling is argmax-invariant, so this
     changes only how honest the number is, never which class is predicted.
     """
-    import json
-
     import numpy as np
 
-    path = ROOT / "reports" / "cv_results.json"
-    if not path.exists():
+    from fcda.eval.cv_report import load as load_cv
+
+    # Use the same loader the report uses: it merges the per-model cv_<model>.json files, which
+    # is where the temperatures actually live when the models were run separately.
+    cv = load_cv(ROOT / "reports")
+    if not cv:
         return 1.0
-    cv = json.loads(path.read_text())
     for m in cv.get("models", []):
         if m["model"] == name:
             temps = [f["calibration"]["temperature"] for f in m.get("folds", [])
