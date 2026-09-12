@@ -19,7 +19,7 @@ V1 = ROOT.parent
 sys.path.insert(0, str(V1 / "src"))
 sys.path.insert(0, str(ROOT))
 
-from fcda2.data.dataset import class_counts, load_real_pool  # noqa: E402
+from fcda2.data.dataset import class_counts, load_benchmark, load_extra_healthy  # noqa: E402
 from fcda2.train.runner import MODE_FOR_MODEL, run  # noqa: E402
 
 from fcda.models.registry import DISPLAY_NAMES, build_model  # noqa: E402
@@ -41,16 +41,18 @@ def _build(name: str):
     return lambda: build_model(name, pretrained=False)
 
 
-def _header(pool):
-    print(f"real pool: {len(pool)} tiles  {class_counts(pool)}")
+def _header(pool, extra):
+    print(f"evaluation benchmark: {len(pool)} real tiles  {class_counts(pool)}")
+    print(f"extra real Healthy for training only: {len(extra)}")
     print(f"target: macro-F1 >= {TARGET_MACRO_F1}  (v1 best 0.462; always-Healthy macro-F1 0.206)")
 
 
 def cmd_pilot(args) -> int:
     """Does procedural synthetic data help? Same folds, one variable."""
     REPORTS.mkdir(parents=True, exist_ok=True)
-    pool = load_real_pool(DATA)
-    _header(pool)
+    pool = load_benchmark(DATA)
+    extra = [] if args.no_extra else load_extra_healthy(DATA)
+    _header(pool, extra)
     dev = pick_device(args.device)
     name = args.model
     print(f"\nPILOT: {DISPLAY_NAMES[name]} | {args.folds} folds | {args.max_minutes} min/fold | {dev}")
@@ -60,7 +62,7 @@ def cmd_pilot(args) -> int:
         print(f"\n{'=' * 70}\n  {'WITH' if use_syn else 'WITHOUT'} synthetic\n{'=' * 70}")
         results[use_syn] = run(
             name, _build(name), pool, DATA, size=args.size, n_folds=args.folds,
-            use_synthetic=use_syn, per_class_target=args.per_class,
+            use_synthetic=use_syn, extra_healthy=extra, per_class_target=args.per_class,
             batch_size=args.batch, max_minutes=args.max_minutes, epochs=args.epochs,
             device=dev, reports_dir=REPORTS, verbose=True,
         )
@@ -88,14 +90,16 @@ def cmd_pilot(args) -> int:
 
 def cmd_full(args) -> int:
     REPORTS.mkdir(parents=True, exist_ok=True)
-    pool = load_real_pool(DATA)
-    _header(pool)
+    pool = load_benchmark(DATA)
+    extra = [] if args.no_extra else load_extra_healthy(DATA)
+    _header(pool, extra)
     dev = pick_device(args.device)
     out = {}
     for name in (args.models or MODELS):
         print(f"\n{'=' * 70}\n  {DISPLAY_NAMES[name]}\n{'=' * 70}")
         r = run(name, _build(name), pool, DATA, size=args.size, n_folds=args.folds,
-                use_synthetic=not args.no_synthetic, per_class_target=args.per_class,
+                use_synthetic=not args.no_synthetic, extra_healthy=extra,
+                per_class_target=args.per_class,
                 batch_size=args.batch, max_minutes=args.max_minutes, epochs=args.epochs,
                 device=dev, reports_dir=REPORTS, verbose=True)
         out[name] = r.to_dict()
@@ -125,6 +129,8 @@ def main() -> int:
         sp.add_argument("--epochs", type=int, default=30)
         sp.add_argument("--per-class", type=int, default=600)
         sp.add_argument("--device", default="auto")
+        sp.add_argument("--no-extra", action="store_true",
+                        help="exclude the extra real Healthy tiles from training")
 
     a = sub.add_parser("pilot")
     common(a)

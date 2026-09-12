@@ -94,6 +94,7 @@ def run(
     size: int = 192,
     n_folds: int = 3,
     use_synthetic: bool = True,
+    extra_healthy: list[TileRef] | None = None,
     per_class_target: int = 600,
     inner_val_frac: float = 0.15,
     batch_size: int = 8,
@@ -124,22 +125,26 @@ def run(
         inner_train = train_idx[perm[n_inner:]]
 
         real_train = [real[i] for i in inner_train]
+        # Extra real Healthy tiles join training only -- they are outside the benchmark, so they
+        # can never leak into an evaluation fold.
+        extra = list(extra_healthy or [])
         synthetic: list[TileRef] = []
         if use_synthetic:
-            plan = plan_synthetic(real_train, per_class_target=per_class_target)
+            plan = plan_synthetic(real_train + extra, per_class_target=per_class_target)
             synthetic = build_synthetic(plan, seed=seed * 100 + k)
             if verbose:
-                print(f"\n  --- fold {k}: {len(real_train)} real + {len(synthetic)} synthetic "
-                      f"(plan {plan})", flush=True)
+                print(f"\n  --- fold {k}: {len(real_train)} benchmark + {len(extra)} extra-healthy "
+                      f"+ {len(synthetic)} synthetic (plan {plan})", flush=True)
         elif verbose:
-            print(f"\n  --- fold {k}: {len(real_train)} real, no synthetic", flush=True)
+            print(f"\n  --- fold {k}: {len(real_train)} benchmark + {len(extra)} extra-healthy, "
+                  f"no synthetic", flush=True)
 
         # The guard that makes the separation checkable rather than trusted.
         eval_refs = [real[i] for i in np.concatenate([inner_val, test_idx])]
         assert_no_synthetic_in_eval(eval_refs, f"fold{k}-eval")
 
         try:
-            train_ds = FloodDataset(real_train + synthetic, data_root, size, mode, train_tf)
+            train_ds = FloodDataset(real_train + extra + synthetic, data_root, size, mode, train_tf)
             val_ds = FloodDataset([real[i] for i in inner_val], data_root, size, mode, eval_tf)
             test_ds = FloodDataset([real[i] for i in test_idx], data_root, size, mode, eval_tf)
 
@@ -165,7 +170,7 @@ def run(
             oof_pred[test_idx] = apply_temperature(tlog, cal.temperature).argmax(1)
 
             result.folds.append(FoldOutcome(
-                fold=k, n_real_train=len(real_train), n_synthetic=len(synthetic),
+                fold=k, n_real_train=len(real_train) + len(extra), n_synthetic=len(synthetic),
                 n_test=len(test_idx), best_val_f1=res.best_val_f1, gap=res.gap,
                 epochs_run=len(res.epochs), seconds=time.time() - f0,
                 metrics=m.to_dict(), calibration=cal.to_dict(),

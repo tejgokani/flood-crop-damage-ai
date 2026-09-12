@@ -43,14 +43,45 @@ class TileRef:
     synthetic: bool = False
 
 
-def load_real_pool(data_root: Path) -> list[TileRef]:
-    """Every real ETCI tile that has a complete pre/post pair, with its severity label."""
-    index = data_root / "pool_index.json"
+def _refs(path: Path) -> list[TileRef]:
+    return [TileRef(r["tile_id"], int(r["label"]), False) for r in json.loads(path.read_text())]
+
+
+def load_benchmark(data_root: Path) -> list[TileRef]:
+    """The evaluation benchmark: v1's stratified 900-tile set.
+
+    Deliberately *not* the full 2,032-tile pool, and the reason is a measurement rather than a
+    preference. The stratified set already contains **every** Mild, Moderate and Severe tile in
+    the corpus -- the extra 1,132 tiles in the full pool are 100% Healthy. Evaluating on the full
+    pool therefore adds no minority data, raises the always-Healthy baseline from 0.703 to 0.869,
+    and drops macro-F1 from 0.462 to 0.354 purely by changing the test distribution. That is a
+    different question being answered, not a worse model.
+
+    Keeping v1's benchmark means v2's numbers are comparable to v1's. The extra Healthy tiles are
+    still useful -- as *training* data, via ``load_extra_healthy``.
+    """
+    index = data_root / "index_900_strat.json"
     if not index.exists():
-        raise FileNotFoundError(
-            f"{index} not found -- run the v1 downloader first (`fcda download --tier T4_large`)"
-        )
-    return [TileRef(r["tile_id"], int(r["label"]), False) for r in json.loads(index.read_text())]
+        raise FileNotFoundError(f"{index} not found -- run the v1 downloader first")
+    return _refs(index)
+
+
+def load_extra_healthy(data_root: Path) -> list[TileRef]:
+    """Real Healthy tiles outside the benchmark. Training-only, like the synthetic ones.
+
+    They cannot sharpen the minority classes, but more real negatives do help Healthy precision,
+    and they are real -- no domain gap to pay for.
+    """
+    pool_path = data_root / "pool_index.json"
+    if not pool_path.exists():
+        return []
+    bench = {r.key for r in load_benchmark(data_root)}
+    return [r for r in _refs(pool_path) if r.key not in bench]
+
+
+def load_real_pool(data_root: Path) -> list[TileRef]:
+    """Backwards-compatible alias for the evaluation benchmark."""
+    return load_benchmark(data_root)
 
 
 def class_counts(refs: list[TileRef]) -> dict[str, int]:
