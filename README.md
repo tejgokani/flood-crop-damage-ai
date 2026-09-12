@@ -67,35 +67,79 @@ Full objective and sub-objectives: **[`docs/objective.md`](docs/objective.md)**.
 ## Results
 
 <!-- RESULTS:START -->
-Deepest tier completed: **T2_small** (400 tiles at 192px, device `mps`). Tiers walked: T1_tiny → T2_small.
+**5-fold cross validation over all 900 tiles** (192px, device `mps`). Every tile is scored exactly once by a model that never saw it, so the evaluation set is 900 tiles rather than the ~128 a single 15% holdout would give — and all 20 Severe tiles in the corpus are scored, not ~4.
 
-Scaling stopped because: _advancing to T3_medium: projected 29 min, 1.4 GB peak, 27.9 GB disk free_
+Tier class distribution: `{'Healthy': 633, 'Mild': 164, 'Moderate': 83, 'Severe': 20}`.
 
-### Image pipeline — five hybrids, one protocol
+### Primary result — mandated 4-class severity
 
-| Hybrid architecture | Params | Test macro-F1 | Accuracy | Cohen's κ | Flood IoU | Dice | Diagnosis | Correction helped |
-|---|---:|---:|---:|---:|---:|---:|---|:--:|
-| EfficientNet + Attention | 5.7M | **0.507** | 0.667 | 0.500 | 0.206 | 0.342 | OVERFIT | no |
-| ResNet + U-Net | 24.4M | **0.500** | 0.683 | 0.511 | 0.222 | 0.364 | OVERFIT | no |
-| CNN + LSTM | 9.0M | **0.484** | 0.667 | 0.500 | 0.195 | 0.327 | OK | — |
-| Swin Transformer + U-Net | 31.9M | **0.436** | 0.600 | 0.414 | 0.241 | 0.388 | OVERFIT | yes |
-| YOLO12 + U-Net | 9.8M | **0.342** | 0.400 | 0.192 | 0.158 | 0.273 | OVERFIT | no |
+| Hybrid | Params | OOF macro-F1 | fold σ | Accuracy | Cohen's κ | Flood IoU | Train-val gap |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| CNN + LSTM | 9.0M | **0.459** | ±0.041 | 0.688 | 0.391 | 0.190 | -0.096 ✅ |
+| YOLO12 + U-Net | 5.5M | **0.462** | ±0.048 | 0.713 | 0.388 | 0.205 | -0.076 ✅ |
 
-**Per-class F1 (test)**
+The **train-val gap** column is the anti-overfitting check: final training macro-F1 minus best validation macro-F1, averaged over folds. ≤ 0.10 is healthy. The five-model baseline ran at +0.19 to +0.35.
+
+
+### Supplementary — ordinal and binary views of the same predictions
+
+| Hybrid | Within-1-class accuracy | Ordinal MAE | Binary damage accuracy | Binary damage F1 |
+|---|---:|---:|---:|---:|
+| CNN + LSTM | **0.934** | 0.383 | 0.790 | **0.692** |
+| YOLO12 + U-Net | **0.951** | 0.338 | 0.798 | **0.664** |
+
+Macro-F1 treats the four classes as unrelated, so calling a Severe tile Moderate is scored as badly as calling it Healthy. Operationally those are very different mistakes. **Within-1-class accuracy** and **binary damage detection** are reported alongside the mandated 4-class figure, never instead of it.
+
+
+### Per-class F1 (out-of-fold)
 
 | Hybrid | Healthy | Mild | Moderate | Severe |
 |---|---:|---:|---:|---:|
-| YOLO12 + U-Net | 0.823 | 0.417 | 0.400 | 0.000 |
-| ResNet + U-Net | 0.820 | 0.560 | 0.621 | 0.000 |
-| EfficientNet + Attention | 0.815 | 0.571 | 0.640 | 0.000 |
-| Swin Transformer + U-Net | 0.783 | 0.588 | 0.375 | 0.000 |
-| CNN + LSTM | 0.868 | 0.615 | 0.455 | 0.000 |
+| CNN + LSTM | 0.841 | 0.406 | 0.396 | 0.194 |
+| YOLO12 + U-Net | 0.855 | 0.407 | 0.379 | 0.205 |
 
-Tier class distribution: `{'Healthy': 180, 'Mild': 117, 'Moderate': 83, 'Severe': 20}` (tiers cap Healthy at 45%; the natural prior in the full pool is 86.9% Healthy / 0.98% Severe).
+### Confidence calibration
 
-**GAN augmentation** (training split only): 224 synthetic tiles from 280 real ones over 40 epochs in 105s.
+| Hybrid | Temperature | ECE before | ECE after | Mean confidence before → after | Folds accepted |
+|---|---:|---:|---:|---|:--:|
+| CNN + LSTM | 0.521 | 0.157 | 0.067 | 59.4% → **72.7%** | 5/5 |
+| YOLO12 + U-Net | 0.476 | 0.163 | 0.078 | 61.0% → **76.9%** | 5/5 |
 
-**Leakage audit (image)**: findings present — 6 finding(s).
+Temperature scaling is fitted on an inner validation slice of each training fold and never on the held-out fold. It is argmax-invariant, so it changes only how honest the confidence number is, never the accuracy. A fold's fit is **accepted only if it actually reduces calibration error**; otherwise the temperature is reset to 1.0 and no scaling is applied, which is why the accepted-folds column matters.
+
+
+<details><summary>Per-fold detail</summary>
+
+| Hybrid | Fold | Test tiles | macro-F1 | Accuracy | Train-val gap | Epochs |
+|---|---:|---:|---:|---:|---:|---:|
+| CNN + LSTM | 1 | 180 | 0.498 | 0.711 | +0.026 | 9 |
+| CNN + LSTM | 2 | 180 | 0.441 | 0.761 | -0.170 | 9 |
+| CNN + LSTM | 3 | 180 | 0.475 | 0.639 | -0.123 | 9 |
+| CNN + LSTM | 4 | 180 | 0.394 | 0.661 | -0.171 | 9 |
+| CNN + LSTM | 5 | 180 | 0.397 | 0.667 | -0.039 | 9 |
+| YOLO12 + U-Net | 1 | 180 | 0.388 | 0.700 | -0.096 | 10 |
+| YOLO12 + U-Net | 2 | 180 | 0.477 | 0.717 | -0.093 | 11 |
+| YOLO12 + U-Net | 3 | 180 | 0.373 | 0.694 | +0.031 | 14 |
+| YOLO12 + U-Net | 4 | 180 | 0.493 | 0.767 | -0.087 | 14 |
+| YOLO12 + U-Net | 5 | 180 | 0.448 | 0.689 | -0.135 | 12 |
+
+</details>
+
+
+**Generalisation gap per fold**
+
+![Generalisation gap per fold](reports/figures/cv_gaps.png)
+
+
+**Out-of-fold confusion matrices**
+
+![Out-of-fold confusion matrices](reports/figures/cv_confusion.png)
+
+
+**Predictions across severity classes**
+
+![Predictions across severity classes](reports/figures/predictions.png)
+
 
 ### Tabular pipeline — Indian district crop statistics
 
@@ -106,23 +150,10 @@ Tier class distribution: `{'Healthy': 180, 'Mild': 117, 'Moderate': 83, 'Severe'
 | Cohen's κ | 0.156 |
 | 10-fold CV macro-F1 | 0.404 ± 0.010 |
 | SMOTE | {'0': 14260, '1': 4329, '2': 4186, '3': 1266} → balanced (+32999 rows) |
-| Target leakage caught | `yield, production, yield_z, yield_mean, yield_std, label_name` |
+| Target leakage caught and dropped | `yield, production, yield_z, yield_mean, yield_std, label_name` |
 
-**Predictions across severity classes**
+These numbers are low **because** the leakage check works: the six yield-derived columns are removed before modelling. Left in, `YIELD = PRODUCTION / AREA` would drive this to near-perfect and completely meaningless.
 
-![Predictions across severity classes](reports/figures/predictions.png)
-
-**Learning curves**
-
-![Learning curves](reports/figures/learning_curves.png)
-
-**Confusion matrices**
-
-![Confusion matrices](reports/figures/confusion_matrices.png)
-
-**Progressive scaling**
-
-![Progressive scaling](reports/figures/scaling.png)
 <!-- RESULTS:END -->
 
 ---
