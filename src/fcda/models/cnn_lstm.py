@@ -57,6 +57,24 @@ class ConvLSTMCell(nn.Module):
         return o * torch.tanh(c), c
 
 
+class ChangeFusion(nn.Module):
+    """Cheap temporal fusion for the shallow scales: concat(post, post - pre) -> 1x1 conv.
+
+    Recurrence at full resolution is the single most expensive operation in this model --
+    measured at 109 ms for a 0.07M-parameter cell, because it is bandwidth-bound at 192x192 --
+    and it is also where recurrence earns the least: fine texture does not need memory, it needs
+    to know what changed. An explicit difference gives the skip connection its temporal signal
+    at a fraction of the cost, which buys the epochs the model was being starved of.
+    """
+
+    def __init__(self, channels: int):
+        super().__init__()
+        self.mix = ConvBNAct(channels * 2, channels, k=1)
+
+    def forward(self, pre: torch.Tensor, post: torch.Tensor) -> torch.Tensor:
+        return self.mix(torch.cat([post, post - pre], dim=1))
+
+
 class CNNEncoder(nn.Module):
     """Compact CNN encoder applied identically to every timestep (shared weights)."""
 
@@ -93,21 +111,34 @@ class CNNLSTM(FloodModel):
         widths: tuple[int, ...] = (32, 64, 128, 256),
         decoder_channels: tuple[int, ...] = (128, 64, 32),
         dropout: float = 0.3,
+        lstm_scales: int = 2,
         pretrained: bool = False,  # accepted for a uniform constructor signature
     ):
         super().__init__()
         self.encoder = CNNEncoder(in_channels, widths)
         enc_ch = self.encoder.channels
-        # One ConvLSTM per encoder scale, not only at the bottleneck.
+
+        # Every scale carries temporal information, but not all of it needs recurrence.
         #
-        # With recurrence at the deepest scale alone, the temporal signal exists in exactly
-        # one of the four feature maps handed to the decoder, and the three full-resolution
-        # skips -- identical between the two timesteps -- dilute it away: measured end to
-        # end, a 16% relative difference at the bottleneck arrived at the classifier as
-        # 1e-8, i.e. the network was a single-frame CNN wearing an LSTM. Running the
-        # recurrence at every scale means every skip carries pre-to-post change, so the
-        # temporal claim holds structurally rather than by hope.
-        self.lstms = nn.ModuleList([ConvLSTMCell(c, c) for c in enc_ch])
+        # Recurrence at the deepest scale *alone* was the original bug: the shallow skips are
+        # identical between timesteps and diluted the signal from 16% relative at the bottleneck
+        # to 1e-8 at the classifier, making this a single-frame CNN wearing an LSTM. Running a
+        # ConvLSTM at all four scales fixed that but cost 356 ms per forward pass, of which 173 ms
+        # went to the two shallowest scales -- and the model was then wall-clock-capped at nine
+        # epochs with its loss still falling.
+        #
+        # So: ConvLSTM on the deep scales, where state across time is worth carrying, and an
+        # explicit difference fusion on the shallow ones, where the useful signal is simply what
+        # changed. Both paths keep every skip temporal.
+        self.recurrent_from = max(0, len(enc_ch) - lstm_scales)
+        self.lstms = nn.ModuleList([
+            ConvLSTMCell(c, c) if i >= self.recurrent_from else nn.Identity()
+            for i, c in enumerate(enc_ch)
+        ])
+        self.fusions = nn.ModuleList([
+            ChangeFusion(c) if i < self.recurrent_from else nn.Identity()
+            for i, c in enumerate(enc_ch)
+        ])
         self.decoder = UNetDecoder(enc_ch, list(decoder_channels)[: len(enc_ch) - 1])
         self.head = SegSeverityHead(self.decoder.out_channels, dropout=dropout)
 
@@ -117,14 +148,25 @@ class CNNLSTM(FloodModel):
             x = x[:, None]
         t = x.shape[1]
         states: list[tuple[torch.Tensor, torch.Tensor] | None] = [None] * len(self.lstms)
+        first_feats: list[torch.Tensor] = []
+        last_feats: list[torch.Tensor] = []
 
         for step in range(t):
             feats = self.encoder(x[:, step])
-            for i, (cell, f) in enumerate(zip(self.lstms, feats, strict=True)):
-                states[i] = cell(f, states[i])
+            if step == 0:
+                first_feats = feats
+            last_feats = feats
+            for i in range(self.recurrent_from, len(self.lstms)):
+                states[i] = self.lstms[i](feats[i], states[i])
 
-        # Every level is now a recurrent state over the pre/post sequence.
-        return [s[0] for s in states]
+        out: list[torch.Tensor] = []
+        for i in range(len(self.lstms)):
+            if i >= self.recurrent_from:
+                out.append(states[i][0])          # recurrent state over the sequence
+            else:
+                pre = first_feats[i] if t > 1 else last_feats[i]
+                out.append(self.fusions[i](pre, last_feats[i]))   # explicit pre->post change
+        return out
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         import torch.nn.functional as F
