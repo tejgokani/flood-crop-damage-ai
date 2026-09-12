@@ -78,22 +78,29 @@ def _sampler_kwargs(dataset, balanced: bool) -> dict:
 
 
 class ListDataset(Dataset):
-    """Wraps a list of ``(image, mask, label)`` triples, real or GAN-generated."""
+    """Wraps GAN-generated samples so they are indistinguishable from real ones.
 
-    def __init__(self, items: list[tuple[np.ndarray, np.ndarray, int]]):
+    Accepts either ``(image, mask, label)`` or ``(image, mask, label, fraction)`` and always
+    yields the 4-tuple the real dataset yields, computing the flood fraction from the mask when
+    it is not supplied.
+    """
+
+    def __init__(self, items: list[tuple]):
         self.items = items
 
     def __len__(self) -> int:
         return len(self.items)
 
     def __getitem__(self, i):
-        img, mask, label = self.items[i]
+        item = self.items[i]
+        img, mask, label = item[0], item[1], item[2]
         m = np.asarray(mask, dtype=np.float32)
+        fraction = np.float32(item[3]) if len(item) > 3 else np.float32(m.mean())
         return (
             torch.from_numpy(np.asarray(img)).float(),
             torch.from_numpy(m),
             int(label),
-            np.float32(m.mean()),
+            fraction,
         )
 
 

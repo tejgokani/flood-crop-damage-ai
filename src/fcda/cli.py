@@ -96,6 +96,52 @@ def _cmd_cv(args) -> int:
     return 0
 
 
+def _cmd_ablate(args) -> int:
+    """Does GAN augmentation actually help? Same fold twice, one variable changed."""
+    from .data.etci import FloodTileDataset, build_index
+    from .data.tiers import get_tier
+    from .models.registry import DISPLAY_NAMES, build_model, is_temporal, wants_change_input
+    from .preprocess.transforms import build_transform
+    from .train.ablation import render, run_ablation
+    from .train.loop import pick_device
+
+    tier = get_tier(args.tier)
+    name = args.model
+    dev = pick_device(args.device)
+    REPORTS.mkdir(parents=True, exist_ok=True)
+
+    records = build_index(DATA_ROOT, tier.n_tiles, progress=True)
+    import numpy as np
+
+    labels = np.array([r.label for r in records])
+    temporal, change = is_temporal(name), wants_change_input(name)
+    train_tf = build_transform(train=True, use_clahe=True)
+    eval_tf = build_transform(train=False, use_clahe=True)
+
+    def ds(tf, **kw):
+        return FloodTileDataset(records, DATA_ROOT, size=tier.image_size, transform=tf, **kw)
+
+    print(f"\nGAN ablation: {DISPLAY_NAMES.get(name, name)} | tier {tier.name} "
+          f"({tier.n_tiles} tiles) | {args.folds} folds | device {dev}")
+
+    res = run_ablation(
+        model_name=name,
+        build=lambda: build_model(name, pretrained=False),
+        train_base=ds(train_tf, temporal=temporal, change=change),
+        eval_base=ds(eval_tf, temporal=temporal, change=change),
+        # The GAN always learns from the pre/post pair, whatever layout the model consumes.
+        gan_source=ds(eval_tf, temporal=True),
+        labels=labels,
+        n_folds=args.folds, batch_size=tier.batch_size,
+        max_minutes_per_arm=args.max_minutes, gan_epochs=args.gan_epochs,
+        gan_mode="temporal" if temporal else ("change" if change else "single"),
+        device=dev, reports_dir=REPORTS, verbose=True,
+    )
+    print("\n" + render(res))
+    print(f"\nWrote {REPORTS / 'ablation.json'}")
+    return 0
+
+
 def _cmd_tabular(args) -> int:
     from .data.download import download_india_csv
     from .pipeline import run_tabular_pipeline
@@ -151,6 +197,15 @@ def main(argv: list[str] | None = None) -> int:
     cv.add_argument("--offline", action="store_true")
     cv.add_argument("--device", default="auto")
     cv.set_defaults(func=_cmd_cv)
+
+    ab = sub.add_parser("ablate", help="measure whether GAN augmentation helps")
+    ab.add_argument("--tier", default="T3_medium", choices=[x.name for x in TIERS])
+    ab.add_argument("--model", default="yolo12_unet", choices=all_model_names())
+    ab.add_argument("--folds", type=int, default=3)
+    ab.add_argument("--max-minutes", type=float, default=10.0, help="wall-clock cap per arm")
+    ab.add_argument("--gan-epochs", type=int, default=40)
+    ab.add_argument("--device", default="auto")
+    ab.set_defaults(func=_cmd_ablate)
 
     tb = sub.add_parser("tabular", help="the CSV/SMOTE sequence")
     tb.set_defaults(func=_cmd_tabular)

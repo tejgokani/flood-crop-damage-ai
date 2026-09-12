@@ -1,0 +1,336 @@
+{
+  "model": "yolo12_unet",
+  "n_folds": 2,
+  "seconds": 124.0,
+  "arms": [
+    {
+      "fold": 1,
+      "gan": false,
+      "n_train": 64,
+      "n_synthetic": 0,
+      "metrics": {
+        "accuracy": 0.24,
+        "macro_f1": 0.1391851244189226,
+        "weighted_f1": 0.21616261051864005,
+        "kappa": -0.12116443745082606,
+        "iou": 0.19321629822280018,
+        "dice": 0.3238579602215966,
+        "within_one_accuracy": 0.7333333333333333,
+        "ordinal_mae": 1.0666666666666667,
+        "binary_accuracy": 0.4533333333333333,
+        "binary_f1": 0.49382716049382713,
+        "per_class_f1": {
+          "Healthy": 0.4057971014492754,
+          "Mild": 0.1509433962264151,
+          "Moderate": 0.0,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 34,
+          "Mild": 16,
+          "Moderate": 15,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            14,
+            18,
+            0,
+            2
+          ],
+          [
+            12,
+            4,
+            0,
+            0
+          ],
+          [
+            8,
+            6,
+            0,
+            1
+          ],
+          [
+            1,
+            9,
+            0,
+            0
+          ]
+        ]
+      },
+      "gap": 0.17611001389803232,
+      "epochs_run": 6,
+      "seconds": 17.007755041122437,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 1,
+      "gan": true,
+      "n_train": 64,
+      "n_synthetic": 32,
+      "metrics": {
+        "accuracy": 0.26666666666666666,
+        "macro_f1": 0.16145833333333331,
+        "weighted_f1": 0.21361111111111108,
+        "kappa": -0.029705441837243995,
+        "iou": 0.061399217221135026,
+        "dice": 0.11569486056695091,
+        "within_one_accuracy": 0.6,
+        "ordinal_mae": 1.1466666666666667,
+        "binary_accuracy": 0.4666666666666667,
+        "binary_f1": 0.5555555555555556,
+        "per_class_f1": {
+          "Healthy": 0.3333333333333333,
+          "Mild": 0.0,
+          "Moderate": 0.3125,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 34,
+          "Mild": 16,
+          "Moderate": 15,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            10,
+            0,
+            24,
+            0
+          ],
+          [
+            10,
+            0,
+            6,
+            0
+          ],
+          [
+            5,
+            0,
+            10,
+            0
+          ],
+          [
+            1,
+            0,
+            9,
+            0
+          ]
+        ]
+      },
+      "gap": -0.15176171274961597,
+      "epochs_run": 5,
+      "seconds": 20.602534770965576,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 2,
+      "gan": false,
+      "n_train": 64,
+      "n_synthetic": 0,
+      "metrics": {
+        "accuracy": 0.30666666666666664,
+        "macro_f1": 0.1846590909090909,
+        "weighted_f1": 0.2425757575757576,
+        "kappa": -0.07556536127964697,
+        "iou": 0.23270963772574282,
+        "dice": 0.3775579108070814,
+        "within_one_accuracy": 0.68,
+        "ordinal_mae": 1.1466666666666667,
+        "binary_accuracy": 0.3333333333333333,
+        "binary_f1": 0.2857142857142857,
+        "per_class_f1": {
+          "Healthy": 0.375,
+          "Mild": 0.36363636363636365,
+          "Moderate": 0.0,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 33,
+          "Mild": 16,
+          "Moderate": 16,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            15,
+            18,
+            0,
+            0
+          ],
+          [
+            8,
+            8,
+            0,
+            0
+          ],
+          [
+            14,
+            2,
+            0,
+            0
+          ],
+          [
+            10,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "gap": 0.06017649017649018,
+      "epochs_run": 9,
+      "seconds": 24.65398669242859,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "fold": 2,
+      "gan": true,
+      "n_train": 64,
+      "n_synthetic": 31,
+      "metrics": {
+        "accuracy": 0.48,
+        "macro_f1": 0.34913419913419913,
+        "weighted_f1": 0.43392784992784994,
+        "kappa": 0.20125614418350635,
+        "iou": 0.10869431074910527,
+        "dice": 0.196076248782524,
+        "within_one_accuracy": 0.7866666666666666,
+        "ordinal_mae": 0.8666666666666667,
+        "binary_accuracy": 0.5733333333333334,
+        "binary_f1": 0.5428571428571428,
+        "per_class_f1": {
+          "Healthy": 0.6,
+          "Mild": 0.19047619047619047,
+          "Moderate": 0.6060606060606061,
+          "Severe": 0.0
+        },
+        "support": {
+          "Healthy": 33,
+          "Mild": 16,
+          "Moderate": 16,
+          "Severe": 10
+        },
+        "confusion": [
+          [
+            24,
+            3,
+            0,
+            6
+          ],
+          [
+            13,
+            2,
+            1,
+            0
+          ],
+          [
+            6,
+            0,
+            10,
+            0
+          ],
+          [
+            4,
+            0,
+            6,
+            0
+          ]
+        ]
+      },
+      "gap": 0.09123514270573096,
+      "epochs_run": 14,
+      "seconds": 54.64541292190552,
+      "ok": true,
+      "error": ""
+    }
+  ],
+  "gan_training": [
+    {
+      "fold": 1,
+      "epochs": 6,
+      "seconds": 3.2,
+      "d_loss": 0.9099,
+      "g_loss": 5.9854,
+      "n_real": 64,
+      "n_generated": 32
+    },
+    {
+      "fold": 2,
+      "epochs": 6,
+      "seconds": 2.6,
+      "d_loss": 0.6038,
+      "g_loss": 6.1184,
+      "n_real": 64,
+      "n_generated": 31
+    }
+  ],
+  "summary": {
+    "without_gan": {
+      "n_folds": 2,
+      "macro_f1": {
+        "mean": 0.1619,
+        "std": 0.0227
+      },
+      "accuracy": {
+        "mean": 0.2733,
+        "std": 0.0333
+      },
+      "within_one_accuracy": {
+        "mean": 0.7067,
+        "std": 0.0267
+      },
+      "binary_f1": {
+        "mean": 0.3898,
+        "std": 0.1041
+      },
+      "iou": {
+        "mean": 0.213,
+        "std": 0.0197
+      },
+      "gap": 0.1181,
+      "severe_f1": 0.0
+    },
+    "with_gan": {
+      "n_folds": 2,
+      "macro_f1": {
+        "mean": 0.2553,
+        "std": 0.0938
+      },
+      "accuracy": {
+        "mean": 0.3733,
+        "std": 0.1067
+      },
+      "within_one_accuracy": {
+        "mean": 0.6933,
+        "std": 0.0933
+      },
+      "binary_f1": {
+        "mean": 0.5492,
+        "std": 0.0063
+      },
+      "iou": {
+        "mean": 0.085,
+        "std": 0.0236
+      },
+      "gap": -0.0303,
+      "severe_f1": 0.0
+    },
+    "delta_with_minus_without": {
+      "macro_f1": 0.0934,
+      "accuracy": 0.1,
+      "within_one_accuracy": -0.0134,
+      "binary_f1": 0.1594,
+      "iou": -0.128,
+      "severe_f1": 0.0
+    },
+    "verdict": "GAN augmentation helped (macro-F1 +0.093 across 2 folds)",
+    "paired_folds": [
+      1,
+      2
+    ]
+  }
+}

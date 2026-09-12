@@ -33,9 +33,18 @@ from .. import NUM_CLASSES
 GAN_RESOLUTION = 64
 LATENT_DIM = 100
 
+#: The generator emits a full pre/post *pair* plus the mask: 3 pre + 3 post + 1 mask.
+#:
+#: It used to emit 4 channels -- one post-flood image and its mask -- which no longer matches
+#: what either model consumes. YOLO12 takes a 6-channel [post, post-pre] change stack and
+#: CNN+LSTM takes an ordered [pre, post] sequence, so 3-channel single-date output could not be
+#: fed to either and the augmentation step was quietly skipped. Generating the pair serves both:
+#: the change model differences it, the temporal model sequences it.
+GAN_CHANNELS = 7
+
 
 class Generator(nn.Module):
-    """z + class embedding -> 4 x 64 x 64 (3 SAR channels + flood mask)."""
+    """z + class embedding -> 7 x 64 x 64 (3 pre + 3 post SAR channels + flood mask)."""
 
     def __init__(self, latent_dim: int = LATENT_DIM, n_classes: int = NUM_CLASSES, ngf: int = 64):
         super().__init__()
@@ -53,7 +62,7 @@ class Generator(nn.Module):
             nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf),
             nn.ReLU(True),
-            nn.ConvTranspose2d(ngf, 4, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d(ngf, GAN_CHANNELS, 4, 2, 1, bias=False),
             nn.Tanh(),
         )
 
@@ -68,7 +77,7 @@ class Discriminator(nn.Module):
     def __init__(self, n_classes: int = NUM_CLASSES, ndf: int = 64):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(4, ndf, 4, 2, 1, bias=False),
+            nn.Conv2d(GAN_CHANNELS, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, True),
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 2),
@@ -104,24 +113,29 @@ class GanTrainResult:
     n_train_tiles: int
 
 
-def _to_gan_tensor(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Pack image+mask into the generator's 4-channel [-1, 1] layout."""
+def _resize_stack(arr: np.ndarray, interp) -> np.ndarray:
     import cv2
 
-    img = np.stack(
-        [cv2.resize(c, (GAN_RESOLUTION, GAN_RESOLUTION), interpolation=cv2.INTER_AREA) for c in img]
+    return np.stack(
+        [cv2.resize(c, (GAN_RESOLUTION, GAN_RESOLUTION), interpolation=interp) for c in arr]
     )
-    m = cv2.resize(
-        mask[0], (GAN_RESOLUTION, GAN_RESOLUTION), interpolation=cv2.INTER_NEAREST
-    )[None]
-    packed = np.concatenate([img, m], axis=0).astype(np.float32)
+
+
+def _to_gan_tensor(pre: np.ndarray, post: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Pack a pre/post pair and its mask into the generator's 7-channel [-1, 1] layout."""
+    import cv2
+
+    pre_r = _resize_stack(pre, cv2.INTER_AREA)
+    post_r = _resize_stack(post, cv2.INTER_AREA)
+    m = _resize_stack(mask, cv2.INTER_NEAREST)
+    packed = np.concatenate([pre_r, post_r, m], axis=0).astype(np.float32)
     lo, hi = packed.min(), packed.max()
     packed = (packed - lo) / (hi - lo + 1e-6)
     return packed * 2.0 - 1.0
 
 
 def train_gan(
-    train_samples: list[tuple[np.ndarray, np.ndarray, int]],
+    train_samples: list[tuple[np.ndarray, np.ndarray, np.ndarray, int]],
     epochs: int = 30,
     batch_size: int = 32,
     lr: float = 2e-4,
@@ -132,9 +146,9 @@ def train_gan(
 ) -> tuple[Generator, GanTrainResult]:
     """Train the conditional DCGAN on training-split tiles only.
 
-    ``train_samples`` must come from the training indices. There is deliberately no split
-    argument here -- the caller does the slicing, so this function has no way to reach the
-    evaluation data.
+    ``train_samples`` is a list of ``(pre, post, mask, label)`` drawn from the training indices.
+    There is deliberately no split argument here -- the caller does the slicing, so this
+    function has no way to reach the evaluation data.
     """
     import time
 
@@ -145,8 +159,8 @@ def train_gan(
     opt_d = torch.optim.Adam(d.parameters(), lr=lr, betas=(0.5, 0.999))
     crit = nn.BCEWithLogitsLoss()
 
-    packed = np.stack([_to_gan_tensor(img, msk) for img, msk, _ in train_samples])
-    labels = np.array([lab for _, _, lab in train_samples], dtype=np.int64)
+    packed = np.stack([_to_gan_tensor(pre, post, msk) for pre, post, msk, _ in train_samples])
+    labels = np.array([lab for *_, lab in train_samples], dtype=np.int64)
     x_all = torch.from_numpy(packed).float()
     y_all = torch.from_numpy(labels)
 
@@ -200,18 +214,28 @@ def generate_samples(
     size: int,
     device: str = "cpu",
     seed: int = 0,
-) -> list[tuple[np.ndarray, np.ndarray, int]]:
+    mode: str = "change",
+) -> list[tuple[np.ndarray, np.ndarray, int, float]]:
     """Synthesise ``counts[cls]`` tiles of each severity class, resized to ``size``.
 
-    Returned in exactly the same ``(image, mask, label)`` form as real samples, so the
-    training loop cannot tell them apart.
+    ``mode`` selects the layout the consuming model expects:
+
+    * ``"change"``  -> ``[post(3), post - pre(3)]``, the 6-channel stack YOLO12 takes.
+    * ``"temporal"``-> ``[pre, post]`` as ``[T=2, 3, H, W]``, what CNN+LSTM takes.
+    * ``"single"``  -> ``post`` alone, for a plain 3-channel model.
+
+    Returned as ``(image, mask, label, fraction)`` -- the same 4-tuple the real dataset yields,
+    so the training loop genuinely cannot tell a synthetic tile from a real one.
     """
     import cv2
 
     torch.manual_seed(seed)
     g.eval()
     dev = torch.device(device)
-    out: list[tuple[np.ndarray, np.ndarray, int]] = []
+    out: list[tuple[np.ndarray, np.ndarray, int, float]] = []
+
+    def up(planes: np.ndarray, interp=cv2.INTER_LINEAR) -> np.ndarray:
+        return np.stack([cv2.resize(c, (size, size), interpolation=interp) for c in planes])
 
     for cls, n in counts.items():
         if n <= 0:
@@ -223,11 +247,17 @@ def generate_samples(
             gen = g(z, y).cpu().numpy()
             for sample in gen:
                 sample = (sample + 1.0) / 2.0
-                img = np.stack(
-                    [cv2.resize(c, (size, size), interpolation=cv2.INTER_LINEAR) for c in sample[:3]]
-                )
-                mask = cv2.resize(sample[3], (size, size), interpolation=cv2.INTER_LINEAR)
-                out.append((img.astype(np.float32), (mask > 0.5).astype(np.float32)[None], cls))
+                pre = up(sample[0:3]).astype(np.float32)
+                post = up(sample[3:6]).astype(np.float32)
+                mask = (up(sample[6:7]) > 0.5).astype(np.float32)
+
+                if mode == "temporal":
+                    img = np.stack([pre, post], axis=0)
+                elif mode == "change":
+                    img = np.concatenate([post, post - pre], axis=0)
+                else:
+                    img = post
+                out.append((img, mask, cls, float(mask.mean())))
     return out
 
 
